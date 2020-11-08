@@ -1,5 +1,6 @@
 import tactic
 import data.int.basic
+import data.string.basic
 universe u
 
 section cs_algebra
@@ -112,7 +113,22 @@ inductive chaotic {i} : lambda i → lambda i → Prop
   | app_right : ∀ {l r r' : lambda i}, beta r r' → chaotic (l.app r) (l.app r')
   | abs : ∀ {body body'}, beta body body' → chaotic (body.abs) (body'.abs)
 
-instance lambda_format : ∀ i : ℕ, has_to_format (lambda i)
+local infix `++`:50 := string.append
+
+def append_to_string {T : Type} [has_to_string T] (a : string) (b : T) : string 
+  := string.append a (has_to_string.to_string b)  
+
+
+section to_string
+
+protected def to_string_aux : ∀ {i}, lambda i → string 
+| _ (var v) := "χ" ++ to_string v.val
+| _ (app l r) := "(" ++ to_string_aux l ++ " " ++ to_string_aux r ++ ")"
+| i (abs a) := "λχ" ++ to_string i ++ "⇒" ++ to_string_aux a ++ "."
+
+instance : ∀ {i}, has_to_string (lambda i) := λ _, ⟨ to_string_aux ⟩
+
+end to_string
 
 section church
 
