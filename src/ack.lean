@@ -1,7 +1,4 @@
-import computability.partrec
-import computability.partrec_code
-import computability.primrec
-import computability.tm_to_partrec
+import computability.turing_machine
 import order.lexicographic
 
 def ack : ℕ → ℕ → ℕ 
@@ -273,5 +270,3 @@ theorem ack_tm_correct (m n : ℕ) : [ack m n] ∈ TM2.eval ack_tm ⋆ [n, m] :=
     },
   
   end
-
-
