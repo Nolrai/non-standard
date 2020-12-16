@@ -19,7 +19,7 @@ infixr ` ⟶ `:60 := has_internal_imp.imp
 
 class heyting_algebra α extends bounded_distrib_lattice α, has_compl α, has_internal_imp α :=
   (imp_adjoint : ∀ a b c : α, a ⊓ b ≤ c ↔ a ≤ b ⟶ c)
-  (compl_from_imp : ∀ a : α, aᶜ = a ⟶ ⊥)
+  (compl_from_imp : ∀ a : α, aᶜ = (a ⟶ ⊥))
 
 export heyting_algebra (imp_adjoint compl_from_imp)
 
@@ -101,3 +101,4 @@ theorem compl_unique (i : x ⊓ y = ⊥) (s : x ⊔ y = ⊤) : xᶜ = y :=
 
   end
 end heyting_algebra
+
