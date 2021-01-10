@@ -1,182 +1,198 @@
 import data.pfun
+section
 
 universes u
+parameter (F : Type u → Type u)
 
-structure interpreter (F : Type u → Type u) : Type (u +1) :=
-  (m : Type u → Type u) (monad_m : monad m) (lawful : is_lawful_monad m) (on_prompt (α : Type u) : F α → m α)
+structure interpreter  (m : Type u → Type u) :=
+  (map' : ∀ {α β} (f : α → β), m α → m β)
+  (pure' : ∀ {α}, α → m α)
+  (seq' : ∀ {α β : Type u}, m (α → β) → m α → m β)
+  (bind' : ∀ {α β}, m α → (α → m β) → m β)
+  (on_prompt : ∀ {α}, F α → m α)
 
-def eff (F : Type u → Type u) (α : _) := Π i : interpreter F, i.m α
+parameter {F}
 
-abbreviation interpreter.run {F α} (i : interpreter F) (x : eff F α) := x i
-abbreviation eff.run {F α} (x : eff F α) (i : interpreter F) := x i
+structure eff' (α : Type u) := 
+  (run {m} (i : interpreter m) : m α)
 
-abbreviation pure' (m : Type u → Type u) (h : monad m) : ∀ {α} (x : α), m α := λ α x, pure x
-def  bind' (m : Type u → Type u) (h : monad m) : ∀ {α} (x : m α) {β} (f : α → m β), m β := 
-  λ α x β f, bind x f
-def  map' (m : Type u → Type u) (h : monad m) : ∀ {α β} (f : α → β) (x : m α), m β :=
-  λ α β f x, f <$> x
-def  seq' (m : Type u → Type u) (h : monad m) : ∀ {α β : Type u} (mf : m (α → β)) (x : m α), m β :=
-  λ α β mf x, mf <*> x
+def from_on_prompt {m : Type u → Type u} [monad m] 
+  (on_prompt : ∀ α, F α → m α) : interpreter m :=
+  { interpreter.
+      map' := λ {α β} (f : α → β) ma, f <$> ma,
+      pure' := λ {α} x, (pure x : m α),
+      seq' := λ {α β : Type u} (mf : m (α → β)) (ma : m α), mf <*> ma,
+      bind' := λ {α β} (ma : m α) (fm : α → m β), ma >>= fm,
+      on_prompt := on_prompt
+    }
 
-def eff.pure {α} {F} (x : α) : eff F α :=
-  λ i, pure' i.m i.monad_m x
-def eff.bind {α β F} (x : eff F α) (f : α → eff F β) : eff F β :=
-  λ i, bind' i.m i.monad_m (x i) (i.run ∘ f)
+@[simp]
+lemma from_on_prompt.map'_def {m : Type u → Type u} [monad m] 
+  (on_prompt : ∀ α, F α → m α) :
+   (from_on_prompt on_prompt).map' = λ {α β} (f : α → β) ma, f <$> ma := rfl 
 
-def eff.map {α β : Type u} {F} (f : α → β) (effA : eff F α) : eff F β := 
-  λ i, map' i.m i.monad_m f (i.run effA)
-def eff.seq {α β : Type u} {F} (effF : eff F (α → β)) (x : eff F α) : eff F β := 
-  λ i, seq' i.m i.monad_m (i.run effF) (i.run x)
+@[simp]
+lemma from_on_prompt.pure_def {m : Type u → Type u} [monad m] 
+  (on_prompt : ∀ α, F α → m α) :
+   (from_on_prompt on_prompt).pure' = λ {α} a, pure a := rfl 
 
-instance (F : Type u → Type u) : monad (eff F) :=
-{ map := λ α β, eff.map,
-  pure := λ α, eff.pure,
-  seq := λ α β, eff.seq,
-  bind := λ α β, eff.bind }
+@[simp]
+lemma from_on_prompt.seq'_def {m : Type u → Type u} [monad m] 
+  (on_prompt : ∀ α, F α → m α) :
+   (from_on_prompt on_prompt).seq' = λ {α β : Type u} (mf : m (α → β)) (ma : m α), mf <*> ma := rfl 
 
--- lemma eff.id_map_aux (m : Type u → Type u) (h: monad m) (h1 : is_lawful_monad m) {α : Type u} (x : m α) :
---   x >>= return = x :=
--- begin
---   exact bind_pure x
--- end
+@[simp]
+lemma from_on_prompt.bind'_def {m : Type u → Type u} [monad m] 
+  (on_prompt : ∀ α, F α → m α) :
+   (from_on_prompt on_prompt).bind' = λ {α β} (ma : m α) (fm : α → m β), ma >>= fm := rfl 
 
-#print is_lawful_monad
+@[simp]
+lemma from_on_prompt.on_prompt_def {m : Type u → Type u} [monad m] 
+  (on_prompt : ∀ α, F α → m α) :
+   (from_on_prompt on_prompt).on_prompt = on_prompt := rfl 
 
-lemma eff.id_map_aux (m : Type u → Type u) (h : monad m) (h' : is_lawful_monad m) 
-  {α : Type u} (x : m α) : id <$> x = x :=
-  begin
-    apply @id_map',
-  end
+def eff'.to_monad {γ} {m : Type u → Type u} [monad m] 
+  (x : eff' γ)
+  (on_prompt : ∀ α, F α → m α) : m γ := 
+  x.run (from_on_prompt on_prompt)
 
-lemma eff.id_map (F : Type u → Type u) {α : Type u} (x : eff F α) : id <$> x = x :=
-  begin
-    unfold_projs,
-    unfold eff.map map',
-    funext,
-    apply eff.id_map_aux i.m i.monad_m i.lawful,
-  end
+@[simp]
+lemma eff'.to_monad_def {γ} {m : Type u → Type u} [monad m] 
+  (x : eff' γ)
+  (on_prompt : ∀ α, F α → m α) :
+  x.to_monad on_prompt = x.run (from_on_prompt on_prompt) := rfl
 
-lemma eff.comp_map_aux (m : Type u → Type u) (m' : monad m) (m'' : is_lawful_monad m) {α β γ} :
-  ∀ (h : β → γ) (g : α → β) (x : m α), (h ∘ g) <$> x = h <$> g <$> x :=
-  begin
-    intros,
-    exact comp_map g h x,
-  end
+instance eff'_monad : monad eff' := 
+  { monad.
+    map := λ {α β} (f : α → β) (xa : eff' α), {run := λ _ i, i.map' f (xa.run i)},
+    pure := λ {α} (a : α), {run := λ _ i, i.pure' a},
+    seq := λ {α β} (xf : eff' (α → β)) (xa : eff' α), {run := λ _ i, i.seq' (xf.run i) (xa.run i)},
+    bind := λ {α β} (xa : eff' α) (xf : α → eff' β), {run := λ _ i, i.bind' (xa.run i) (λ a, (xf a).run i)}
+  }
+
+def to_monad_lawfully {γ} {m : Type u → Type u} [monad m] [is_lawful_monad m] 
+  (x : eff' γ)
+  (on_prompt : ∀ α, F α → m α) : m γ := 
+  eff'.to_monad x on_prompt
+
+@[simp]
+lemma to_monad_lawfully_def {γ} {m : Type u → Type u} [monad m] [is_lawful_monad m] 
+  (x : eff' γ)
+  (on_prompt : ∀ α, F α → m α) : to_monad_lawfully x on_prompt = eff'.to_monad x on_prompt := rfl
+
+def eff_r {α : Type u} (x y: eff' α) : Prop :=
+  ∀ (m : Type u → Type u) [h_1:monad m] [h_2:@is_lawful_monad m h_1] (on_prompt), 
+    let reduce (z : eff' α) := (@to_monad_lawfully α m h_1 h_2 z on_prompt : m α) in reduce x = reduce y
+
+@[refl]
+lemma eff_r.refl {α} : ∀ x : eff' α, eff_r x x := by {intros _ _ _ _ _ _, refl}
+@[symm]
+lemma eff_r.symm {α} : ∀ x y : eff' α, eff_r x y → eff_r y x
+  | x y h m monad_m lawful on_prompt := by {intro reduce, symmetry, apply h}
+
+lemma eff_r.iseqv (α : Type u) : equivalence (eff_r : eff' α → eff' α → Prop) :=
+begin
+  split,
+  apply eff_r.refl,
   
-lemma eff.comp_map  
-  (F : Type u → Type u) {α β γ : Type u}
-  (g : α → β)
-  (h : β → γ)
-  (x : eff F α) :
-  (h ∘ g) <$> x = h <$> g <$> x :=
-begin
-  unfold_projs,
-  simp,
-  unfold eff.map map',
-  funext,
-  transitivity (map' i.m i.monad_m h (map' i.m i.monad_m g (i.run x))),
-  unfold map',
-  apply eff.comp_map_aux _ _ i.lawful,
-  unfold map',
+  split,
+  {
+    intros x y h _ _ _ _ _, 
+    symmetry, 
+    apply h
+  },
+
+  {
+    intros x y z xy yz _ _ _ _ _,
+    transitivity (reduce y),
+    apply xy,
+    apply yz,
+  },
 end
 
-lemma eff.pure_bind_ {α β : Type u}
-  (g : α)
-  (m : Type u → Type u)
-  (H : monad m) 
-  (H' : is_lawful_monad m)
-  (ff : α → m β)
-  : return g >>= ff = ff g :=
+instance eff'.setoid (α) : setoid (eff' α) :=
+  {r := eff_r, iseqv := by apply eff_r.iseqv}
+
+def eff (α : Type u) : Type (u + 1):= quotient (eff'.setoid α)
+
+lemma eff.map_aux (α β : Type u)
+  (f : α → β) :
+  (has_equiv.equiv ⇒ has_equiv.equiv) (λ (x : eff' α), f <$> x)
+    (λ (x : eff' α), f <$> x) :=
 begin
-  apply pure_bind,
+  intros x y,
+  unfold_projs,
+  intros x_r_y _ _ _ _ _,
+  simp,
+  unfold_projs, simp,
+  
 end
 
-lemma eff.pure_seq_eq_map (F : Type u → Type u) {α β : Type u}
-  (g : α → β)
-  (x : eff F α) :
-  pure g <*> x = g <$> x :=
+lemma eff.seq_aux (α β : Type u) :
+  (has_equiv.equiv ⇒ has_equiv.equiv ⇒ has_equiv.equiv) (has_seq.seq : eff' (α → β) → eff' α → eff' β) 
+    has_seq.seq :=
 begin
-  unfold_projs, 
+  intros mf mg mf_r_mg x y x_r_y,
+  unfold_projs at *,
+  intros _ _ _ _ _,
+  have H : ∀ z, reduce z = z (@from_on_prompt m h_1 on_prompt),
+    {intro z, refl},
+  repeat {rw H},
   simp,
-  unfold eff.map eff.pure eff.seq eff.bind,
-  unfold bind' map' seq',
-  funext,
-  transitivity seq' i.m i.monad_m (pure' i.m i.monad_m g) (i.run x),
-  reflexivity,
-  unfold seq',
-  rw ← @pure_seq_eq_map i.m i.monad_m.to_applicative i.lawful.to_is_lawful_applicative,
-  end
-
-lemma eff.map_pure (F : Type u → Type u) {α β : Type u}
-  (g : α → β)
-  (x : α) :
-  g <$> (pure x : eff F α) = pure (g x) :=
-begin
-  unfold_projs,
-  unfold eff.map eff.pure eff.bind bind',
-  funext,
-  transitivity (i.run ∘ eff.pure ∘ g) x,
-  apply eff.pure_bind_,
-  exact i.lawful,
-  simp,
-  refl,
-end
-
-lemma eff.seq_pure (F : Type u → Type u) {α β : Type u}
-  (g : eff F (α → β))
-  (x : α) :
-  g <*> pure x = (λ (g : α → β), g x) <$> g :=
-begin
-  unfold_projs,
-  unfold eff.pure eff.seq eff.map eff.bind bind',
-  funext,
   congr,
-  funext,
-  simp,
-  transitivity (i.run ∘ eff.pure ∘ f') x,
-  apply eff.pure_bind_,
-  {exact i.lawful},
-  simp,
+  apply mf_r_mg _, assumption,
+  apply x_r_y _, assumption,
 end
 
- lemma eff.seq_assoc_aux : ∀ α (F) (i : interpreter F) (x : i.m α) (β) (f : α → β), 
-  bind' i.m i.monad_m x (i.run ∘ eff.pure ∘ f) = map' i.m i.monad_m f x :=
+def r_on_func {α β} (f g : α → eff' β) := ∀ x, f x ≈ g x
+
+instance eff'.body_setoid (α β) : setoid (α → eff' β) := 
+  {
+    r := r_on_func, 
+    iseqv :=
+      begin
+        split,
+        {intros f x α monad_m lawful_m on_prompt reduce, refl},
+        split,
+        {intros x y x_y α β f g on_prompt reduce, symmetry, apply x_y},
+        {
+          intros x y z x_y y_z α β f g on_prompt reduce,
+          transitivity (reduce (y α)),
+          apply x_y,
+          apply y_z,
+        },
+      end
+  } 
+
+lemma eff.bind_aux_aux (α β : Type u) (ma : eff' α) (x : α → eff' β)
+  (m : Type u → Type u) [monad m] [is_lawful_monad m] (on_prompt : ∀ α, F α → m α ) : 
+  to_monad_lawfully (λ (i : interpreter), i.bind' (ma i) (λ (a : α), x a i)) on_prompt 
+    = let i := from_on_prompt on_prompt in i.bind' (ma i) (λ a, x a i) :=
   begin
-    unfold bind' map',
-    clear_except,
-    intros,
-    transitivity (bind' _ _ x (pure' _ i.monad_m ∘ f)),
-    {unfold bind', reflexivity},
-    unfold bind',
-    apply @bind_pure_comp_eq_map i.m i.monad_m i.lawful,
+    simp,
   end
 
-lemma eff.seq_assoc (F : Type u → Type u) {α β γ : Type u}
-  (x : eff F α)
-  (g : eff F (α → β))
-  (h : eff F (β → γ)) :
-  h <*> (g <*> x) = function.comp <$> h <*> g <*> x :=
+lemma eff.bind_aux (α β : Type u) :
+  (has_equiv.equiv ⇒ has_equiv.equiv ⇒ has_equiv.equiv) (has_bind.bind : eff' α → (α → eff' β) → eff' β) 
+    has_bind.bind :=
 begin
-  unfold_projs,
+  intros mf mg mf_r_mg x y x_r_y,
+  unfold_projs at *,
+  intros _ _ _ _,
   simp,
-  unfold eff.map eff.seq eff.bind eff.pure,
-  funext,
-  simp_rw eff.seq_assoc_aux,
-  unfold bind' map',
+  
 end
 
+end
 
-instance (F : Type u → Type u) : is_lawful_monad (eff F) :=
-{ map_const_eq := by {intros, reflexivity},
-  id_map := λ α, eff.id_map F,
-  comp_map := by {apply eff.comp_map},
-  seq_left_eq := λ _ _ _ _, rfl,
-  seq_right_eq := λ _ _ _ _, rfl,
-  pure_seq_eq_map := by {apply eff.pure_seq_eq_map },
-  map_pure := by {apply eff.map_pure},
-  seq_pure := by {apply eff.seq_pure},
-  seq_assoc := by {intros, extract_goal},
-  bind_pure_comp_eq_map := _,
-  bind_map_eq_seq := _,
-  pure_bind := _,
-  bind_assoc := _ }
+def eff.join {F α} : eff F (eff α) → eff F α := quotient.map 
+
+instance eff.monad : monad eff :=
+  { monad.
+    map := λ α β (f : α → β), quotient.map (λ x : eff' α, f <$> x) (eff.map_aux α β f) ,
+    pure := λ α a, ⟦pure a⟧,
+    seq := λ α β, quotient.map₂ has_seq.seq (by apply eff.seq_aux),
+    bind := λ α β, quotient.map₂ has_bind.bind (by apply eff.bind_aux),
+  } 
+
+end
