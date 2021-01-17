@@ -1,3 +1,5 @@
+import tactic
+
 section
 
 universes u
@@ -8,33 +10,40 @@ structure interpreter (m : Type u → Type u) :=
   (lawful : is_lawful_monad m)
   (on_prompt : ∀ {α : Type u}, F α → m α)
 
-def eff (α : Type u) : Type (u + 1) := ∀ {m : Type u → Type u} (i : interpreter m), m α
+def mk_interpreter {m} [h_1 : monad m] [h_2 : is_lawful_monad m] (p : ∀ α, F α → m α) :=
+  {interpreter. on_prompt := p, monad_m := h_1, lawful := h_2}
+
+structure eff (α : Type u) : Type (u + 1) := 
+  (run : ∀ {m : Type u → Type u} (i : interpreter m), m α)
+
+def eff.run' {m} [h_1 : monad m] [h_2 : is_lawful_monad m] {α} (e : eff α) (p : ∀ α, F α → m α):=
+  e.run $ mk_interpreter p
+
+def eff.ext (α : Type u) : ∀ (a b : eff α), (∀ {m} (i : interpreter m), a.run i = b.run i) → a = b
+  | ⟨a⟩ ⟨b⟩ H := by {simp, funext m i, exact H i}
 
 instance eff.monad : monad eff :=
   { monad.
-    map := λ {α β : Type u} (f : α → β) (x : eff α) m i,
-        @functor.map m i.monad_m.to_functor α β f (x i),
+    map := λ {α β : Type u} (f : α → β) (x : eff α), ⟨λ m i,
+        @functor.map m i.monad_m.to_functor α β f (x.run i)⟩,
 
-    pure := λ {α} (a : α) m i, @has_pure.pure m i.monad_m.to_has_pure α a,
+    pure := λ {α} (a : α), ⟨λ m i, @has_pure.pure m i.monad_m.to_has_pure α a⟩,
 
-    seq := λ {α β} (f : eff (α → β) ) (x : eff α) m i,
-        @has_seq.seq m i.monad_m.to_has_seq α β (f i) (x i),
+    seq := λ {α β} (f : eff (α → β) ) (x : eff α), ⟨λ  m i,
+        @has_seq.seq m i.monad_m.to_has_seq α β (f.run i) (x.run i)⟩,
 
     seq_left :=
-      λ {α β} (ma : eff α) (mb : eff β) m i,
-        @has_seq_left.seq_left m i.monad_m.to_has_seq_left α β (ma i) (mb i),
+      λ {α β} (ma : eff α) (mb : eff β), ⟨λ m i,
+        @has_seq_left.seq_left m i.monad_m.to_has_seq_left α β (ma.run i) (mb.run i)⟩,
 
     seq_right :=
-      λ {α β} (ma : eff α) (mb : eff β) m i,
-        @has_seq_right.seq_right m i.monad_m.to_has_seq_right α β (ma i) (mb i),
+      λ {α β} (ma : eff α) (mb : eff β), ⟨λ m i,
+        @has_seq_right.seq_right m i.monad_m.to_has_seq_right α β (ma.run i) (mb.run i)⟩,
 
     bind :=
-      λ {α β} (ma : eff _) (fm : _ → eff _) m i,
-        @has_bind.bind m i.monad_m.to_has_bind _ _ (ma i) (λ a, fm a i),
+      λ {α β} (ma : eff _) (fm : _ → eff _), ⟨λ m i,
+        @has_bind.bind m i.monad_m.to_has_bind _ _ (ma.run i) (λ a, (fm a).run i)⟩,
   }
-  
-
-theorem test : ∀ α, eff α = (∀ m (i : interpreter m), m α) := λ α, rfl
 
 theorem id_map_aux {m : Type u → Type u} [monad m] [is_lawful_monad m] {α} (x : m α) 
   : id <$> x = x := by {apply id_map}
@@ -45,9 +54,11 @@ theorem comp_map_aux {m} [monad m] [is_lawful_monad m] {α β γ : Type u} (f : 
 instance eff.lawful_functor : is_lawful_functor eff :=
   { is_lawful_functor.
     id_map := λ α x, by
-      { unfold_projs, simp, funext,
-      apply @id_map_aux _ _ _,
-      exact i.lawful,
+      { unfold_projs, simp,
+        apply eff.ext,
+        intros,
+        apply @id_map_aux _ _ _,
+        exact i.lawful,
       },
     comp_map := λ α β γ f g x, by
       {
@@ -141,8 +152,8 @@ instance eff.lawful_monad : is_lawful_monad (eff) :=
       begin
         unfold_projs,
         simp,
-        funext,
-        transitivity (λ a : α, f a i) x,
+        apply eff.ext; intros,
+        transitivity (λ a : α, (f a).run i) x,
         apply @pure_bind m i.monad_m i.lawful,
         simp,
       end,
@@ -169,5 +180,8 @@ instance eff.lawful_monad : is_lawful_monad (eff) :=
       end,
     .. eff.lawful_applicative
   }
-
 end
+
+universe u
+def eff.embed {α} {F : Type u → Type u} (x : F α) : eff F α := 
+  ⟨λ (m : Type u → Type u) (i : interpreter F m), i.on_prompt x⟩

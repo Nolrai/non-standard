@@ -1,82 +1,120 @@
 import data.list.chain
 import data.list
+import .eff
 import control.monad.basic
 import control.monad.writer
 
-inductive 
+def array.swap {size} {α} : fin size → fin size → array size α → array size α
+  | i j arr := (arr.write i (arr.read j)).write j (arr.read i) 
 
-inductive sorting_code (size : nat) : Type → Type 2
-  | pure_ : ∀ {α : Type}, α → sorting_code α
-  | bind_ : ∀ α β (ma : sorting_code α) (fm : α → sorting_code β), sorting_code β
-  | swap : ∀ (i j : fin size), sorting_code unit
-  | comp : ∀ (i j : fin size), sorting_code bool
+def array.test {size} {α} [decidable_linear_order α] : fin size → fin size → array size α → bool
+  | i j arr := arr.read i ≤ arr.read j
 
-open sorting_code
+inductive sort_action (width : ℕ) : Type → Type
+  | swap : fin width → fin width → sort_action unit
+  | test : fin width → fin width → sort_action bool
 
-instance sorting.has_bind (size : nat) : has_bind (sorting_code size) :=
-  {bind := λ α β mx mf, sorting_code.bind_ α β mx mf} 
+local notation `𝕄`:50 := λ width α, state_t (array width ℚ) (writer (ℕ × ℕ)) α
 
-instance sorting.has_pure (size : nat) : has_pure (sorting_code size) :=
-  {pure := λ α x, sorting_code.pure_ x} 
+def sort_action.on_prompt : ∀ {width} α (m : sort_action width α), 𝕄 width α
+  | width .(unit) (sort_action.swap i j) := tell (0,1) *> (modify $ array.swap i j)
+  | width .(bool) (sort_action.test i j) := tell (1,0) *> (array.test i j <$> get)
 
-def sorting.map (size) (α β : Type) (f : α → β) (mx : sorting_code size α) : sorting_code size β :=
-  bind_ _ _ mx (pure_ ∘ f)
+@[simp]
+lemma sort_action.on_prompt.swap_def {width} {i j : fin width} : 
+  sort_action.on_prompt _ (sort_action.swap i j) = tell (0,1) *> (modify $ array.swap i j) := rfl
 
-def array.swap {size} {α} : array size α → fin size → fin size → array size α
-  | arr i j := (arr.write i (arr.read j)).write j (arr.read i) 
+@[simp]
+lemma sort_action.on_prompt.test_def {width} {i j : fin width} : 
+  sort_action.on_prompt _ (sort_action.test i j) = tell (1,0) *> (array.test i j <$> get) := rfl
 
-def sorting_code.width {size} : ∀ {α}, sorting_code size α → ℕ 
-  | _ (pure_ a) := 1
-  | _ (bind_ β γ ma fm) := 1 + ma.width
-  | unit (swap i j) := 1
-  | bool (comp i j) := 1
+abbreviation Sorting (width) := eff (sort_action width)
 
-def d_uncurry {α} {β : α → Type} {γ : ∀ {x}, β x → Type} 
-  (f : ∀ (x : α) (y : β x), γ y) (y : (Σ x, β x)) : γ (y.snd) := f y.fst y.snd
+def id.run {α} : id α → α 
+  | x := x
 
-def sorting_code.measure {size} : (Σ' (α : Type), sorting_code size α) → ℕ 
-  | ⟨_, code⟩ := code.width
+def run_sorting_aux {width : ℕ} (x) : array width ℚ × ℕ × ℕ :=
+  match x with
+  | ((unit.star, final), test_count, swap_count) := (final, test_count, swap_count)
+  end
 
-lemma run_aux (size : ℕ) (κ γ : Type)
-  (ma : sorting_code size γ)
-  (fm : γ → sorting_code size κ) :
-  sorting_code.measure ⟨γ, ma⟩ <
-    sorting_code.measure ⟨κ, bind_ γ κ ma fm⟩ :=
-begin
-  unfold sorting_code.measure,
-  unfold sorting_code.width,
-  exact lt_one_add (sorting_code.width ma)
-end
+def run_sorting {width} (m : Sorting width unit) (arr : array width ℚ) : array width ℚ × ℕ × ℕ :=
+ match ((state_t.run (m.run' _ sort_action.on_prompt) arr).run).run with
+  | ((_, final), test_count, swap_count) := (final, test_count, swap_count)
+  end
 
-def sorting.run (m : Type → Type) (β size)
-  [monad m]
-  [monad_state (array size β) m]
-  [monad_reader (β → β → bool) m]
-  [monad_writer (nat × nat) m] 
-  :
-  ∀ α, sorting_code size α → m α 
-| _ (pure_ a) := pure a
-| _ (bind_ γ κ mx fm) := 
-  have mx_aux : sorting_code.measure ⟨γ, mx⟩ < sorting_code.measure ⟨κ, bind_ γ κ mx fm⟩ := 
-    begin apply run_aux end,
-  have fm_aux : ∀ a : sorting_code size κ, sorting_code.measure ⟨κ, a⟩ < sorting_code.measure ⟨κ, bind_ γ κ mx fm⟩ := sorry,
-  bind (sorting.run _ mx) (fix (f γ) ∘ fm)
-| unit (swap i j) := tell (0,1) >> modify (λ arr, arr.swap i j) 
-| bool (comp i j) :=
-  do
-  c <- read,
-  arr <- get,
-  tell (1,0),
-  pure (c (arr.read i) (arr.read j))
-  using_well_founded {rel_tac := λ _ _, `[exact ⟨_, measure_wf sorting_code.measure⟩]}
+abbreviation do_swap {width} (j k : fin width) 
+  : Sorting width unit := 
+  eff.embed (sort_action.swap j k)
 
+abbreviation do_test {width} (j k : fin width) 
+  : Sorting width bool := 
+  eff.embed (sort_action.test j k)
 
-instance (size : nat) : functor (sorting_code size) :=
-  {
-    map := sorting.map size
-  }
+notation `⋆` := unit.star
 
-instance (size : nat) : is_lawful_functor (sorting_code size) := 
-  { map_const_eq := λ _ _, rfl,
-  id_map := λ α x, begin unfold functor.map sorting.map, end,
-  comp_map := _ }
+def fin.forM_ {m} [monad m] : ∀ {width}, (fin width → m unit) → m unit
+  | 0 _ := pure ⋆ 
+  | (_+1) f := f 0 *> fin.forM_ (f ∘ fin.succ)
+
+@[simp]
+lemma eff_run_embed {α} {F m : Type → Type} [monad m] [is_lawful_monad m] 
+  (s : F α) (p : ∀ α, F α → m α) : 
+  eff.run' F (eff.embed s) p = p _ s :=
+  rfl
+
+@[simp]
+lemma eff_lift_bind {α β F} {m} [monad m] [is_lawful_monad m] 
+  (ma : eff F α) (fmb : α → eff F β) (p : ∀ α, F α → m α) :
+  (ma >>= fmb).run' F p = ma.run' F p >>= (λ a:α, (fmb a).run' F p) :=
+  begin
+    unfold_projs,
+    simp,
+    unfold eff.run',
+  end
+
+@[simp]
+lemma eff_lift_seq_right {α β F} {m} [monad m] [is_lawful_monad m] 
+  (ma : eff F α) (mb : eff F β) (p : ∀ α, F α → m α) :
+  (ma *> mb).run' F p = ma.run' F p *> mb.run' F p :=
+  begin
+    unfold_projs,
+    simp,
+    unfold eff.run',
+  end
+
+@[simp]
+lemma eff_lift_forM_ {width F } {m} [monad m] [is_lawful_monad m] 
+  (f : fin width → eff F unit) (p : ∀ α, F α → m α) : 
+  (fin.forM_ f).run' F p = fin.forM_ (λ j, (f j).run' F p) :=
+  begin
+    revert f,
+    induction width,
+    case nat.zero {
+      unfold fin.forM_,
+      unfold eff.run',
+      unfold_projs,
+      simp,
+    },
+    case nat.succ {
+      intro f,
+      unfold fin.forM_,
+      rw eff_lift_seq_right,
+      congr,
+      apply width_ih,
+    }
+  end
+
+def test_and_swap {width} (j k : fin width) : Sorting width unit :=
+  do_test j k >>= λ le, if le then do_swap j k else pure ()
+
+abbreviation bubble_sort {width : ℕ} : Sorting width unit := fin.forM_ (λ j, fin.forM_ (test_and_swap j))
+
+lemma bubble_sort_n_sq {n} (arr : array n ℚ) : ∃ m, m <= n ^ 2 ∧ (run_sorting bubble_sort arr).snd = (n ^ 2, m) :=
+  begin
+    unfold run_sorting,
+    simp,
+    unfold test_and_swap,
+    simp,
+    
+  end
