@@ -183,5 +183,10 @@ instance eff.lawful_monad : is_lawful_monad (eff) :=
 end
 
 universe u
-def eff.embed {α} {F : Type u → Type u} (x : F α) : eff F α := 
+abbreviation eff.embed {α} {F : Type u → Type u} (x : F α) : eff F α := 
   ⟨λ (m : Type u → Type u) (i : interpreter F m), i.on_prompt x⟩
+
+@[simp]
+lemma eff.embed.def {α} {F : Type u → Type u} (x : F α) :
+  eff.embed x = ⟨λ (m : Type u → Type u) (i : interpreter F m), i.on_prompt x⟩ :=
+  rfl
