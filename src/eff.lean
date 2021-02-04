@@ -16,9 +16,14 @@ def mk_interpreter {m} [h_1 : monad m] [h_2 : is_lawful_monad m] (p : ∀ α, F 
 structure eff (α : Type u) : Type (u + 1) := 
   (run : ∀ {m : Type u → Type u} (i : interpreter m), m α)
 
-def eff.run' {m} [h_1 : monad m] [h_2 : is_lawful_monad m] {α} (e : eff α) (p : ∀ α, F α → m α):=
+def eff.run' {m} [h_1 : monad m] [h_2 : is_lawful_monad m] {α} (e : eff α) (p : ∀ α, F α → m α) :=
   e.run $ mk_interpreter p
 
+@[simp]
+lemma eff.run'_def {m} [h_1 : monad m] [h_2 : is_lawful_monad m] {α} (e : eff α) (p : ∀ α, F α → m α) :
+  e.run' _ p = e.run {interpreter. on_prompt := p, monad_m := h_1, lawful := h_2} := rfl
+
+@[ext]
 def eff.ext (α : Type u) : ∀ (a b : eff α), (∀ {m} (i : interpreter m), a.run i = b.run i) → a = b
   | ⟨a⟩ ⟨b⟩ H := by {simp, funext m i, exact H i}
 
@@ -190,3 +195,10 @@ abbreviation eff.embed {α} {F : Type u → Type u} (x : F α) : eff F α :=
 lemma eff.embed.def {α} {F : Type u → Type u} (x : F α) :
   eff.embed x = ⟨λ (m : Type u → Type u) (i : interpreter F m), i.on_prompt x⟩ :=
   rfl
+
+lemma eff.induction {F : Type u → Type u} (P : ∀ {α}, eff F α → Prop) 
+  (P_pure : ∀ {α} (a : α), P (pure a : eff F α))
+  (P_embed : ∀ {α} (x : F α), P (eff.embed x : eff F α))
+  (P_bind : ∀ {α β} (x : eff F α) (f : α → eff F β), P x → (∀ a, P (f a)) → P (x >>= f : eff F β)) :
+  ∀ {α} (x : eff F α), P x
+  := sorry

@@ -2,93 +2,34 @@ import data.list.chain
 import data.list
 import .eff
 import control.monad.basic
-import control.monad.writer
+import algebra.big_operators.ring
 
-def array.swap {size} {α} : fin size → fin size → array size α → array size α
-  | i j arr := (arr.write i (arr.read j)).write j (arr.read i) 
+def switch_ix {n} (i j : fin n) := λ k, if i = k then j else if j = k then i else k
+def array.swap {size} {α} (i j : fin size) (arr : array size α) : array size α :=
+  ⟨λ k, arr.data (switch_ix i j k)⟩
+
+lemma switch_ix_involution {n} (i j k : fin n) : switch_ix i j (switch_ix i j k) = k :=
+  begin
+    unfold switch_ix,
+    split_ifs,
+    {exact eq.trans (eq.symm h_1) h},
+    {assumption},
+    {assumption},
+    refl,
+  end
 
 def array.test {size} {α} [linear_order α] : fin size → fin size → array size α → bool
-  | i j arr := arr.read i ≤ arr.read j
+  | i j arr := arr.data i ≤ arr.data j
 
 inductive sort_action (width : ℕ) : Type → Type
   | swap : fin width → fin width → sort_action unit
   | test : fin width → fin width → sort_action bool
 
-structure count :=
-  (test : ℕ) (swap : ℕ)
-
-@[ext]
-lemma count.ext {t t' s s' : ℕ} {t_eq : t = t'} {s_eq : s = s'} :
-  {count . test := t, swap := s} = {test := t', swap := s'} := 
-  begin
-    rw [t_eq, s_eq]
-  end
-
-@[ext]
-lemma count.ext_2 (y : count) : {count. test := y.test, swap := y.swap} = y := 
-  begin
-    cases y,
-    congr,
-  end
-
-def count.add (a b : count) : count := ⟨a.test + b.test, a.swap + b.swap⟩
-
-instance : has_add count := ⟨count.add⟩
-
-@[simp]
-theorem count.add_def (a b : count) : a + b = ⟨a.test + b.test, a.swap + b.swap⟩ := rfl
-
-theorem count.add_assoc : ∀ (a b c : count), a + b + c = a + (b + c) :=
-  begin
-    intros,
-    simp only [count.add_def],
-    split; refine add_assoc _ _ _
-  end
-
-instance : has_zero count := ⟨⟨0,0⟩⟩
-
-@[simp]
-theorem count.zero_def : (0 : count) = ⟨0, 0⟩ := rfl
-
-@[simp]
-theorem count.zero_add (a : count) : 0 + a = a := 
-  begin
-    simp,
-    cases a,
-    split,
-  end
-
-@[simp]
-theorem count.add_zero (a : count) : a + 0 = a := 
-  begin
-    simp,
-    cases a,
-    split,
-  end
-
-@[simp]
-theorem count.add_comm (a b : count) : a + b = b + a := 
-  begin
-    simp,
-    cases a,
-    split; simp; apply add_comm,
-  end
-
-instance : add_comm_monoid count := 
-  { 
-     add_assoc := count.add_assoc,
-     zero_add := count.zero_add,
-     add_zero := count.add_zero,
-     add_comm := count.add_comm,
-     .. count.has_zero,
-     .. count.has_add
-  }
-
 structure MyM (n : ℕ) α : Type :=
-  (run : array n ℚ → ((α × array n ℚ) × count))
+  (run : array n ℚ → ((α × array n ℚ) × ℕ))
 
 @[ext]
-lemma MyM.ext {n α} (x y : array n ℚ → ((α × array n ℚ) × count)) : 
+lemma MyM.ext {n α} (x y : array n ℚ → ((α × array n ℚ) × ℕ)) : 
   x = y → {MyM . run := x} = {run := y} := 
   begin
     intros H,
@@ -106,10 +47,10 @@ lemma MyM.ext_2 {n α} (x y : MyM n α) : (∀ arr, x.run arr = y.run arr) -> x 
   end
 
 abbreviation get' {n : ℕ} : MyM n (array n ℚ) := 
-  MyM.mk (λ arr, ((arr, arr), {test := 1, swap := 0})) 
+  MyM.mk (λ arr, ((arr, arr), 1)) 
 
 abbreviation modify' {n : ℕ} (f : array n ℚ → array n ℚ) : MyM n unit :=
-  MyM.mk (λ arr, (((), f arr), {test := 0, swap := 1}))
+  MyM.mk (λ arr, (((), f arr), 0))
 
 abbreviation MyM.pure {α n} (a : α ) : MyM n α :=
   ⟨λ arr, ((a, arr), 0)⟩
@@ -153,7 +94,6 @@ lemma MyM.pure_bind {n : ℕ} :
     apply MyM.ext_2,
     intro,
     simp,
-    ext; simp,
   end
 
 lemma MyM.bind_assoc {n : ℕ} {α β γ} (x : MyM n α) (f : α → MyM n β) (g : β → MyM n γ) : 
@@ -184,17 +124,18 @@ lemma sort_action.on_prompt.test_def {width} {i j : fin width} :
 
 abbreviation Sorting (width) := eff (sort_action width)
 
-def id.run {α} : id α → α 
-  | x := x
+def Sorting.run {width} {α} (m : Sorting width α) : MyM width α :=
+ (m.run' _ sort_action.on_prompt)
 
-def run_sorting_aux {width : ℕ} (x) : array width ℚ × count :=
-  match x with
-  | ((unit.star, final), count) := (final, count)
-  end
-
-def run_sorting {width} (m : Sorting width unit) (arr : array width ℚ) : array width ℚ × count :=
- match (m.run' _ sort_action.on_prompt).run arr with
-  | ((_, final), count) := (final, count)
+@[simp]
+lemma Sorting.push_into_seq {width} {α} (ma : Sorting width α) {β} (mb : Sorting width β) :
+  (ma *> mb).run = (ma.run) *> mb.run :=
+  begin
+    cases ma,
+    cases mb,
+    unfold Sorting.run, simp, 
+    unfold has_seq_right.seq_right, simp,
+    unfold has_seq_right.seq_right,
   end
 
 abbreviation do_swap {width} (j k : fin width) 
@@ -212,6 +153,18 @@ def fin.forM_ {m} [monad m] : ∀ {width}, (fin width → m unit) → m unit
   | (_+1) f := f 0 *> fin.forM_ (f ∘ fin.succ)
 
 @[simp]
+lemma fin.forM_zero {m} [monad m] {f : fin 0 → m unit} : fin.forM_ f = pure ⋆ :=
+  begin
+    unfold fin.forM_,
+  end
+
+@[simp]
+lemma fin.forM_succ {m} [monad m] (n : ℕ) {f : fin (n+1) → m unit} : fin.forM_ f = f 0 *> fin.forM_ (f ∘ fin.succ) :=
+  begin
+    unfold fin.forM_,
+  end
+
+@[simp]
 lemma eff_run_embed {α} {F m : Type → Type} [monad m] [is_lawful_monad m] 
   (s : F α) (p : ∀ α, F α → m α) : 
   eff.run' F (eff.embed s) p = p _ s :=
@@ -224,7 +177,6 @@ lemma eff_lift_bind {α β F} {m} [monad m] [is_lawful_monad m]
   begin
     unfold_projs,
     simp,
-    unfold eff.run',
   end
 
 @[simp]
@@ -234,7 +186,6 @@ lemma eff_lift_seq_right {α β F} {m} [monad m] [is_lawful_monad m]
   begin
     unfold_projs,
     simp,
-    unfold eff.run',
   end
 
 @[simp]
@@ -262,64 +213,333 @@ lemma eff_lift_forM_ {width F } {m} [monad m] [is_lawful_monad m]
 def test_and_swap {width} (j k : fin width) : Sorting width unit :=
   do_test j k >>= λ le, if le then pure () else do_swap j k 
 
-@[simp]
-lemma id.bind.def {α β} (m : id α) (f : α → id β) : id_bind m f = f m := rfl
-@[simp]
-lemma id.pure.def {α} (a : α) : (pure a : id α) = a := rfl
-@[simp]
-lemma id.run.def {α} (a : id α) : a.run = a := rfl 
+def bubble_sort {width : ℕ} : Sorting width unit := 
+  fin.forM_ (λ j, fin.forM_ (λ i, if (i < j) then (test_and_swap i j) else pure ()))
 
-abbreviation on_fst {α β γ} (f : α → β) (p : (α × γ)) : (β × γ) :=
-  (f p.fst, p.snd)
-
-lemma aux_aux {n} (arr : array n ℚ) (j k : fin n) : (array.test j k arr) ↔ (arr.read j ≤ arr.read k) :=
+lemma loop_count_aux {α β n} (x : MyM n α) (y : MyM n β) (arr) : 
+        (y.run (x.run arr).fst.snd).snd = (y.run arr).snd → ((x *> y).run arr).snd = (x.run arr).snd + (y.run arr).snd :=
   begin
-    
+    intros H,
+    cases x, cases y,
+    unfold has_seq_right.seq_right function.const,
+    simp at *, exact H
+  end 
+
+lemma loop_count_aux_nat  (n m : nat) : n.succ * m = m + n * m := 
+  begin
+    rw (mul_comm n.succ),
+    rw (add_comm m),
+    rw (mul_comm n),
+    omega,
   end
 
-lemma aux {n} (arr : array n ℚ) (j k : fin n) :
-  (run_sorting (test_and_swap j k) arr) = 
-  (let b := ((arr.read j ≤ arr.read k) : bool) in 
-    (if b then arr else arr.swap j k, 1, if b then 0 else 1)) := 
-      begin
-        unfold run_sorting test_and_swap,
-        simp,
-        repeat { unfold eff.run' eff.run has_monad_lift.monad_lift writer_t.bind writer_t.tell state_t.lift function.const state_t.pure function.comp writer_t.pure id writer_t.bind state_t.bind get,
-        try {unfold_projs},
-        try {simp},
+lemma pure_run_run_test (n : ℕ)      (arr : array n ℚ) : ((pure ⋆ : Sorting n unit).run.run arr).snd = 0 := rfl
+
+lemma loop_count {n size : ℕ} (f : fin size → Sorting n unit) (g : nat) 
+  (f_test_eq : ∀ i arr, ((f i).run.run arr).snd = g) :
+  ∀ arr, ((fin.forM_ f).run.run arr).snd = size * g :=
+  begin
+    induction size,
+    {intros, simp, rw pure_run_run_test},
+    {
+      intros,
+      have f_of_succ_test_eq : ∀ (i : fin size_n) (arr : array n ℚ), (((f ∘ fin.succ) i).run.run arr).snd = g,
+        {intros i, apply f_test_eq},
+      rw fin.forM_succ,
+      rw Sorting.push_into_seq,
+      rw loop_count_aux,
+      {
+        rw loop_count_aux_nat,
+        rw ← size_ih (f ∘ fin.succ),
+        {
+          rw size_ih,
+          {congr, apply f_test_eq},
+          apply f_of_succ_test_eq,
         },
-        let τ := state_t (array n ℚ) (writer (ℕ×ℕ)),
-        have H : ((pure ⋆ : τ unit).run arr).run.fst = (⋆, arr) := rfl,
-        let τ_1 := writer_t (ℕ×ℕ) id,
-        let α := (unit × array n ℚ),
-        have H_1 : ((pure (⋆, arr) : τ_1 α).run.snd.fst : ℕ) = 1,
+        apply f_of_succ_test_eq,
+      },
+      repeat {rw size_ih (f ∘ fin.succ) f_of_succ_test_eq},
+    }
+  end
+
+@[simp]
+lemma bubble_sort.zero : (bubble_sort : Sorting 0 unit) = pure () := rfl
+
+lemma test_and_swap_test {n : ℕ}
+  (i j : fin n)
+  (arr : array n ℚ) :
+  ((test_and_swap i j).run.run arr).snd = 1 :=
+begin
+  unfold Sorting.run test_and_swap,
+  rw eff_lift_bind,
+  unfold has_bind.bind,
+  simp,
+  unfold functor.map, simp,
+  split_ifs,
+  {unfold has_pure.pure, simp, unfold has_pure.pure},
+  {unfold sort_action.on_prompt}
+end
+
+open_locale big_operators
+
+open finset
+
+lemma op_of_sum_aux (n) : image (λ i, n - i - 1) (range n) = range n :=
+  begin
+    ext,
+    simp, split; intro H,
+    obtain ⟨b, ⟨H₁, H₂⟩⟩ := H,
+    rw ← H₂,
+    omega,
+    existsi (n - a - 1),
+    split; omega,
+  end
+
+lemma range_cons : ∀ n : ℕ, (list.range n.succ) = 0 :: list.map (+1) (list.range n) :=
+  by {
+    intro n,
+    induction n; unfold list.range list.range_core, {simp},
+    have H : ∀ (n : ℕ) l, list.range_core n l = (list.range_core n list.nil) ++ l,
+    {
+      clear' n_n n_ih,
+      intro n,
+      induction n; unfold list.range list.range_core, 
+      { simp },
+      intros,
+      rw n_ih,
+      rw (n_ih [n_n]),
+      rw list.append_assoc,
+      congr,
+    },
+    rw H,
+    simp_rw (H _ [n_n]),
+    unfold list.range at n_ih,
+    rw n_ih,
+  }
+
+lemma aux₂ (n) {α} [add_comm_monoid α] (f : ℕ → α) (g : ℕ → ℕ) (g_inj : function.injective g) : 
+  ∑ (i : ℕ) in image g (range n), f i = ∑ (i : ℕ) in range n, f (g i) :=
+  begin
+    simp_rw finset.sum_eq_multiset_sum,
+    congr' 1,
+    unfold finset.range; simp,
+    unfold multiset.map multiset.cons multiset.ndinsert quot.lift_on multiset.range multiset.erase_dup list.range coe
+      lift_t has_lift_t.lift coe_t has_coe_t.coe coe_b has_coe.coe,
+    apply congr_arg,
+    have H : (list.map g (list.range_core n list.nil)).erase_dup = (list.map g (list.range_core n list.nil)),
+    {
+      have H : ∀ (l : list ℕ) (g : ℕ → ℕ), 
+        l.erase_dup = l → 
+        function.injective g → 
+        (list.map g l).erase_dup = list.map g l, 
+      {
+        clear' f g g_inj n,
+        unfold list.erase_dup,
+        intros l g l_no_dup g_inj,
+        rw list.pw_filter_map,
+        have H : (λ (x y : ℕ), g x ≠ g y) = (λ x y, x ≠ y),
           {
-            unfold_projs, 
-            unfold writer_t.pure,
-            simp,
+            funext,
+            rw ← iff_eq_eq, 
+            exact 
+              { mp  := λ H₁ H₂, H₁ (congr_arg g H₂),
+                mpr := λ H₁ H₂, H₁ (g_inj H₂)
+              },
           },
-        split_ifs,
-        {
-          rw [H], simp, rw [H_1], unfold run_sorting._match_1,
-        },
-        {
-          exfalso, apply h_1,
-          rw aux_aux at h,
-          apply h,
-        },
-      end
-
-abbreviation bubble_sort {width : ℕ} : Sorting width unit := fin.forM_ (λ j, fin.forM_ (test_and_swap j))
-
-lemma bubble_sort_n_sq {n} (arr : array n ℚ) :
-  let ((m : ℕ), (m' : ℕ)) := (run_sorting bubble_sort arr).snd in 
-    m = n^2 ∧ m' ≤ n^2 :=
-  begin
-    unfold run_sorting,
-    simp,
-    unfold test_and_swap,
-    simp,
-    
+        simp_rw H,
+        congr,
+        transitivity, swap,
+        apply l_no_dup,
+        clear_except,
+        induction l; unfold list.pw_filter,
+        simp,
+        congr; apply l_ih,
+      },
+      apply H,
+      { 
+        unfold list.erase_dup, 
+        apply list.pw_filter_eq_self.mpr,
+        clear_except,
+        induction n,
+        left,
+        right,
+        rw range_snoc,
+      }
+    }
     
   end
 
+-- lemma op_of_sum {α} [add_comm_monoid α] (n : ℕ) (f : ℕ → α) :
+--   (∑ (i : ℕ) in range n, f i) = (∑ (i : ℕ) in range n, f (n - i - 1)) :=
+--   calc ∑ (i : ℕ) in range n, f i = ∑ (i : ℕ) in range n, f i : by refl
+--     ... = ∑ (i : ℕ) in image (λ i, n - i - 1) (range n), f i : by {rw op_of_sum_aux n} 
+--     ... = ∑ (i : ℕ) in (range n), f (n - i - 1) : by {extract_goal}
+  
+-- lemma sum_of_upto_n_aux {n : ℕ} : (n ^ 2 - n) = 2 * ∑ (i : ℕ) in range n, i:= 
+--     calc (n ^ 2 - n) = ((n ^ 2 - n) : ℕ) : by refl
+--       ... = n * (n + 1) : by {sorry}
+--       ... = ∑ (i : ℕ) in range n, (i + (n - i)) : by {sorry}
+--       ... = (∑ (i : ℕ) in range n, i) + (∑ (i : ℕ) in range n, (n - i - 1)) : by {sorry}
+--       ... = (∑ (i : ℕ) in range n, i) + (∑ (i : ℕ) in range n, i) 
+--         : by {congr' 1, have H := op_of_sum n id, simp at H, apply H}
+--       ... = 2 * (∑ (i : ℕ) in range n, i) : by 
+--         {symmetry, apply two_mul (∑ (i : ℕ) in range n, i)}
+
+-- lemma sum_of_upto_n {n : ℕ} : (n ^ 2 + n) / 2 = ∑ (i : ℕ) in finset.range n, i :=
+--   begin
+--     rw sum_of_upto_n_aux,
+--     simp,
+--   end
+
+-- lemma bubble_sort_n_sq_aux :
+--   ∀ {n} (arr : array n ℚ),
+--   (bubble_sort.run.run arr).snd = (n^2 - n)/2 :=
+--   begin
+--     intros, 
+--     symmetry, transitivity (∑ (i:ℕ) in finset.range n, i), {clear arr, extract_goal}, symmetry,
+--     {
+      
+--       apply loop_count, intros,
+--       symmetry, transitivity n * 1, {symmetry, exact mul_one n}, symmetry,
+--       apply loop_count, intros,
+--       rename i_1 j,
+--       clear arr arr_1,
+--       rename arr_2 arr,
+      
+--     }
+--   end
+
+-- def Sorting.exec {α n} (m : Sorting n α) (arr : array n ℚ) : array n ℚ := (m.run.run arr).fst.snd
+
+-- inductive is_permutation_of {n} (arr₁ arr₂ : array n ℚ) : Prop
+--   | intro : 
+--     ∀ (f g : fin n → fin n) 
+--       (fg_id : ∀ i, f (g i) = i) 
+--       (gf_id : ∀ i, g (f i) = i) 
+--       (body : arr₁ = ⟨λ i, arr₂.data (f i)⟩),
+--     is_permutation_of
+
+-- infix ` ≈ ` := is_permutation_of
+
+-- @[symm]
+-- lemma is_permutation_of.symm {n} (x y : array n ℚ) : x ≈ y → y ≈ x :=
+--   begin
+--     intros xy,
+--     cases xy,
+--     apply is_permutation_of.intro xy_g xy_f xy_gf_id xy_fg_id,
+--     obtain ⟨x⟩ := x, obtain ⟨y⟩ := y,
+--     injection xy_body with xy_body_, clear xy_body, rename xy_body_ xy_body,
+--     congr, simp_rw xy_body,
+--     funext k,
+--     congr, symmetry,
+--     apply xy_fg_id,
+--   end
+
+
+-- @[trans]
+-- lemma is_permutation_of.trans {n} (x y z : array n ℚ) : x ≈ y → y ≈ z → x ≈ z :=
+--   begin
+--     intros xy yz,
+--     cases xy, cases yz,
+--     apply is_permutation_of.intro (yz_f ∘ xy_f) (xy_g ∘ yz_g); intros,
+--     { unfold function.comp, rw xy_fg_id, apply yz_fg_id},
+--     { unfold function.comp, rw yz_gf_id, apply xy_gf_id},
+--     cases x; cases y; cases z,
+--     simp at *,
+--     transitivity, {apply xy_body},
+--     congr,
+--     funext,
+--     injections_and_clear,
+--     rw h_2,
+--   end
+
+-- section
+
+-- parameter n : ℕ
+
+-- local notation `P` := λ {α} (m : Sorting n α), ∀ arr, is_permutation_of (m.exec arr) arr
+
+-- lemma pure_run_run.def (n : ℕ) {α a} (arr : array n ℚ) : ((pure a : Sorting n α).run.run arr).fst.snd = arr := rfl
+
+-- lemma Sorting.always_permutes {α} : ∀ m : Sorting n α, P m :=
+--   begin
+--     apply eff.induction P,
+--     {
+--       intros,
+--       apply is_permutation_of.intro id id,
+--       {intros, unfold id}, 
+--       {intros, unfold id},
+--       unfold Sorting.exec,
+--       rw pure_run_run.def,
+--       ext,
+--       refl,
+--     },
+
+--     {
+--       clear α,
+--       intros α s arr,
+--       cases s with i j i j,
+--       case swap {
+--         apply is_permutation_of.intro (switch_ix i j) (switch_ix i j),
+--         {apply switch_ix_involution},
+--         {apply switch_ix_involution},
+--         {
+--           unfold Sorting.exec,
+--           unfold Sorting.run,
+--           simp,
+--           unfold array.swap
+--         },
+--       },
+
+--       case test {
+--         apply is_permutation_of.intro id id,
+--         {intros, unfold id}, 
+--         {intros, unfold id},
+--         unfold Sorting.exec,
+--         unfold Sorting.run,
+--         simp,
+--         cases arr,
+--         unfold functor.map,
+--         simp,
+--         congr,
+--       },
+
+--     },
+
+--     {
+--       clear α,
+--       intros α β ma fm ma_perm fm_perm arr,
+--       unfold Sorting.exec Sorting.run at *,
+--       simp at *,
+--       transitivity (Sorting.exec ma arr),
+--       {
+--         cases ma,
+--         simp at *,
+--         unfold has_bind.bind at *,
+--         simp at *,
+--         apply fm_perm,
+--       },
+--       apply ma_perm,
+--     }
+--   end
+
+-- def is_sorted {n} (arr : array n ℚ) : Prop := ∀ i j : fin n, i ≤ j ↔ arr.data i ≤ arr.data j
+
+-- lemma buble_sort_sorts {n} (arr : array n ℚ) : is_sorted (bubble_sort.exec arr) :=
+-- begin
+--   induction n,
+--   case zero {
+--     unfold is_sorted,
+--     intro,
+--     apply fin_zero_elim,
+--   },
+
+--   case succ {
+--     unfold is_sorted,
+
+--   },
+
+  
+-- end
+
+-- end
