@@ -150,7 +150,7 @@ notation `⋆` := unit.star
 
 def fin.forM_ {m} [monad m] : ∀ {width}, (fin width → m unit) → m unit
   | 0 _ := pure ⋆ 
-  | (_+1) f := f 0 *> fin.forM_ (f ∘ fin.succ)
+  | (_+1) f := fin.forM_ (f ∘ fin.succ) *> f 0 
 
 @[simp]
 lemma fin.forM_zero {m} [monad m] {f : fin 0 → m unit} : fin.forM_ f = pure ⋆ :=
@@ -159,7 +159,7 @@ lemma fin.forM_zero {m} [monad m] {f : fin 0 → m unit} : fin.forM_ f = pure �
   end
 
 @[simp]
-lemma fin.forM_succ {m} [monad m] (n : ℕ) {f : fin (n+1) → m unit} : fin.forM_ f = f 0 *> fin.forM_ (f ∘ fin.succ) :=
+lemma fin.forM_succ {m} [monad m] (n : ℕ) {f : fin (n+1) → m unit} : fin.forM_ f = fin.forM_ (f ∘ fin.succ) *> f 0 :=
   begin
     unfold fin.forM_,
   end
@@ -213,8 +213,14 @@ lemma eff_lift_forM_ {width F } {m} [monad m] [is_lawful_monad m]
 def test_and_swap {width} (j k : fin width) : Sorting width unit :=
   do_test j k >>= λ le, if le then pure () else do_swap j k 
 
+def fin.trans {w : ℕ} {j : fin w} (k : fin ↑j) : fin w := 
+  ⟨k.val, has_lt.lt.trans k.prop j.prop⟩
+
+def find_max {width : ℕ} (j : fin width) : Sorting width unit :=
+  fin.forM_ (λ k : fin j.val, test_and_swap (fin.trans k) j)
+
 def bubble_sort {width : ℕ} : Sorting width unit := 
-  fin.forM_ (λ j, fin.forM_ (λ i, if (i < j) then (test_and_swap i j) else pure ()))
+  fin.forM_ find_max
 
 lemma loop_count_aux {α β n} (x : MyM n α) (y : MyM n β) (arr) : 
         (y.run (x.run arr).fst.snd).snd = (y.run arr).snd → ((x *> y).run arr).snd = (x.run arr).snd + (y.run arr).snd :=
