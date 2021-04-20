@@ -403,9 +403,3 @@ def update {n m : ℕ} (mx : aMatrix (n+1) (m+1) cell) : aMatrix (n+1) (m+1) cel
   mx =>> local_update
 
 end wireworld
-
-def main : io unit :=
-  do
-    cmds <- io.cmdline_args,
-    _ <- cmds.mmap io.print_ln,
-    return unit.star
