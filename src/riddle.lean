@@ -1,6 +1,6 @@
 import data.fintype.basic
 import control.monad.basic
-import data.multiset
+import data.finsupp
 import data.rat
 import order.bounded_lattice
 import order.complete_lattice
@@ -47,12 +47,6 @@ def day_of_week.from_sunday : day_of_week → fin 6
   | Friday    := 5
   | Saturday  := 6
 
-lemma from_sunday_bijection (x y : day_of_week) : 
-  x.from_sunday = y.from_sunday ↔ x = y :=
-by {
-  cases x; cases y; simp; apply_instance
-}
-
 instance : fintype day_of_week := 
   { 
     elems := 
@@ -76,9 +70,42 @@ instance {α} (event : α → bool) : decidable_pred ↑event :=
       then is_true H
       else is_false H
 
-def prob {α} (event : α → bool) (situation : multiset α) : ℚ :=
-  rat.mk (situation.filter ↑event).card situation.card
+def same_ratios (α) [decidable_eq α] (x y : α →₀ ℕ) : Prop :=
+  ∀ a b: α, rat.mk (x a) (x b) = rat.mk (y a) (y b)
 
+lemma same_ratios.reflexive {α} [decidable_eq α] : reflexive (same_ratios α) := λ x a b, rfl
+lemma same_ratios.symmetric {α} [decidable_eq α] : symmetric (same_ratios α) := λ x y h a b, (h a b).symm
+lemma same_ratios.transitive {α} [decidable_eq α] : transitive (same_ratios α) := 
+  λ (x y z : α →₀ ℕ) (x_y : same_ratios α x y) (y_z : same_ratios α y z) (a b : α), (x_y a b).trans (y_z a b)
+
+def prob_setoid (α) [decidable_eq α] : setoid (α →₀ ℕ) :=
+⟨same_ratios α, mk_equivalence _ same_ratios.reflexive same_ratios.symmetric same_ratios.transitive⟩
+
+-- random variables with probabilities in ℚ
+def random_variable (α) [decidable_eq α] := quotient (prob_setoid α)
+
+def finsupp.size {α} (f : α →₀ ℕ) := f.sum (λ _ b, b)
+
+def finsupp.filter' {α} (s : α →₀ ℕ) (event : α → Prop) [decidable_pred event] : α →₀ ℕ :=
+by {
+  apply finsupp.mk,
+  show α → ℕ,
+  {intros a, exact if event a then s a else 0},
+  show finset α,
+  exact s.support.filter (λ x, event x = tt),
+  intro a, simp,
+  refine and.comm,
+}
+
+def prob' {α} [decidable_eq α] (event : α → bool) (situation : α →₀ ℕ) : ℚ :=
+  rat.mk (situation.filter ↑event).size situation.size
+
+def prob (α) [decidable_eq α] (event : α → bool) (situation : random_variable α) : ℚ :=
+  by {
+    induction situation with f,
+    {exact prob' event f},
+  }
+  
 lemma prob_def {α} (event : α → bool) (situation : multiset α) :
   prob event situation = rat.mk (situation.filter ↑event).card situation.card := rfl
 
@@ -313,6 +340,8 @@ by {
   }
 }
 
+section children
+
 structure child := 
   (sex : sex)
   (born_on : day_of_week)
@@ -368,3 +397,17 @@ def riddle2 : ℚ :=
 #eval riddle0
 #eval riddle1
 #eval riddle2
+
+end children
+
+section frogs
+
+structure frog := 
+  (sex : sex)
+  (is_croaking : bool)
+
+variable chance_of_croaking : ℚ
+
+
+
+end frogs
