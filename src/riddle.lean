@@ -70,8 +70,68 @@ instance {α} (event : α → bool) : decidable_pred ↑event :=
       then is_true H
       else is_false H
 
-def same_ratios (α) [decidable_eq α] (x y : α →₀ ℕ) : Prop :=
+def same_ratios (α) (x y : α →₀ ℕ) : Prop :=
   ∀ a b: α, rat.mk (x a) (x b) = rat.mk (y a) (y b)
+
+instance (α) : has_dvd (α →₀ ℕ) :=
+  ⟨λ x y, ∃ q : ℚ, 0 < q ∧ ∀ a, rat.mk (x a) (y a) = q ∨ (x a = 0 ∧ y a = 0)⟩
+
+example (a b c : ℤ) : c ≠ 0 → a * c = b * c → a = b := by {intros, exact (mul_left_inj' ᾰ).mp ᾰ_1}
+
+lemma same_ratios_iff_dvd {α} (x y : (α →₀ ℕ)) : x ∣ y ↔ same_ratios α x y :=
+by {
+  unfold same_ratios,
+  unfold has_dvd.dvd,
+  split; intros h,
+  {
+    obtain ⟨q, ⟨q_pos, h⟩⟩ := h,
+    have : ∃ (n : ℤ) (d : ℕ) (d_pos : 0 < d) (coprime_abs_n_d : n.nat_abs.coprime d), rat.mk n d = q,
+      apply rat.num_denom_cases_on q, intros n d h₀ h₁, use [n, d, h₀, h₁],
+    obtain ⟨n, d, d_pos, coprime_abs_n_d, q_eq⟩ := this,
+    intros,
+    have h_a := h a,
+    have h_b := h b,
+
+    -- just so I can tell them appart visually
+    set i : ℤ := ↑(x a),
+    set j : ℤ := ↑(x b),
+    set k : ℤ := ↑(y a),
+    set l : ℤ := ↑(y b),
+    
+    clear h,
+    cases h_a; cases h_b; rw ← q_eq at *; clear' q q_eq,
+    {
+      have : k ≠ 0 := λ h, by {rw h at h_a, rw rat.mk_zero at h_a, rw h_a at q_pos, apply (lt_irrefl _ q_pos)},
+      have : n * i * l = n * k * j,
+      {
+        rw rat.mk_eq at *,
+        have : n * i * l * ↑d = n * k * j * ↑d,
+        {
+          calc n * i * l * ↑d = n * l * i * ↑ d : by {ring_nf}
+          ...                 = (n * l) * (i * ↑ d) : by {ring_nf}
+          ...                 = (n * l) * (n * k) : by {congr' 1}
+          ...                 = n * l * n * k : by {ring_nf}
+          ...                 = n * k * n * l : by {ring_nf}
+          ...                 = n * k * (n * l) : by {ring_nf}
+          ...                 = (n * k) * (j * ↑d) : by {congr' 1, exact h_b.symm}
+          ...                 = _ : by {ring_nf}
+        },
+        {
+          apply (mul_left_inj' _).mp this,
+          apply int.coe_nat_ne_zero.mpr,
+          apply ne_of_gt d_pos,
+        },
+        
+      },
+      simp_rw mul_assoc at this,
+      apply (mul_right_inj' _).mp this,
+      intros n_eq_0,
+      rw n_eq_0 at q_pos,
+      rw rat.zero_mk at q_pos,
+      apply lt_irrefl (0 : ℚ) q_pos,
+    },
+  }
+}  
 
 lemma same_ratios.reflexive {α} [decidable_eq α] : reflexive (same_ratios α) := λ x a b, rfl
 lemma same_ratios.symmetric {α} [decidable_eq α] : symmetric (same_ratios α) := λ x y h a b, (h a b).symm
@@ -86,27 +146,83 @@ def random_variable (α) [decidable_eq α] := quotient (prob_setoid α)
 
 def finsupp.size {α} (f : α →₀ ℕ) := f.sum (λ _ b, b)
 
-def finsupp.filter' {α} (s : α →₀ ℕ) (event : α → Prop) [decidable_pred event] : α →₀ ℕ :=
+-- for some reason the finsupp.filter is noncomputable.
+def finsupp.filter' {α} (s : α →₀ ℕ) (p : α → Prop) [decidable_pred p] : α →₀ ℕ :=
+  { finsupp .
+    support := s.support.filter p,
+    to_fun := λ a : α, if p a then s a else 0,
+    mem_support_to_fun := 
+      λ a, by {
+        rw finset.mem_filter, 
+        rw ← eq_iff_iff,
+        obtain ⟨supp, f, f_supp_iff⟩ := s,
+        simp,
+        rw f_supp_iff,
+        rw and_comm,
+      } 
+  }
+
+lemma finsupp.filter'_eq_filter {α} (s : α →₀ ℕ) (p : α → Prop) [decidable_pred p] :
+  s.filter' p = s.filter p := 
 by {
-  apply finsupp.mk,
-  show α → ℕ,
-  {intros a, exact if event a then s a else 0},
-  show finset α,
-  exact s.support.filter (λ x, event x = tt),
-  intro a, simp,
-  refine and.comm,
+  obtain ⟨supp, f, f_supp_iff⟩ := s,
+  unfold finsupp.filter',
+  unfold finsupp.filter,
+  simp,
+}
+
+lemma support_eq_of_dvd {α} [decidable_eq α] (s t : α →₀ ℕ) : 
+  s ∣ t → s.support = t.support :=
+by {
+  revert t,
+  apply finsupp.induction₂ s; clear s,
+  {
+    intros t zero_dvd_t,
+    obtain ⟨q, q_pos, zero_dvd_t⟩ := zero_dvd_t,
+    have : ∀ a, t a = 0,
+    {
+      intros a,
+      have H := zero_dvd_t a,
+      cases H; simp at H,
+      {linarith},
+      {exact H}
+    },
+    ext,
+    rw t.mem_support_to_fun,
+    rw (0 : α →₀ ℕ).mem_support_to_fun,
+    unfold_coes at this,
+    rw this, clear this, 
+    unfold_projs,
+    simp,
+  },
+  {
+    intros f g f_ih g_ih t f_g_dvd_t,
+    have : ∃ t₀ t₁, f∣t₀ ∧ g∣t₁ ∧ t₀ + t₁ = t,
+    {
+      obtain ⟨q, q_pos, q_hyp⟩ := f_g_dvd_t,
+      cases f; cases g,
+      simp at *,
+    }
+  }
+}
+
+lemma finsupp.filter_div_filter_of_div {α} [decidable_eq α] (s t : α →₀ ℕ) 
+  : s ∣ t → ∃ q : ℚ, 0 < q ∧ ∀ p, ↑(s.filter p).size * q = ↑(t.filter p).size  :=
+by {
+  intros s_dvd_t,
+  obtain ⟨q, q_pos, s_dvd_t⟩ := s_dvd_t,
+  use [q⁻¹, inv_pos.mpr q_pos],
+  intro p,
 }
 
 def prob' {α} [decidable_eq α] (event : α → bool) (situation : α →₀ ℕ) : ℚ :=
-  rat.mk (situation.filter ↑event).size situation.size
+  rat.mk (situation.filter' ↑event).size situation.size
 
-def prob (α) [decidable_eq α] (event : α → bool) (situation : random_variable α) : ℚ :=
-  by {
-    induction situation with f,
-    {exact prob' event f},
-  }
+def prob (α) [decidable_eq α] (event : α → bool) (var : random_variable α) : ℚ  := 
+  @quotient.rec_on (α →₀ ℕ) (prob_setoid α) (λ _, ℚ) var (prob' event)
+  (λ a b a_r_b, by {simp, unfold prob', })
   
-lemma prob_def {α} (event : α → bool) (situation : multiset α) :
+lemma prob_def {α} (event : α → bool) (random_variable : multiset α) :
   prob event situation = rat.mk (situation.filter ↑event).card situation.card := rfl
 
 lemma prob_nonneg {α} (event : α → bool) (situation : multiset α) :
