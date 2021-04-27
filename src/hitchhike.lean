@@ -3,6 +3,7 @@ import linear_algebra.matrix
 import algebra.group
 import data.nat.basic
 import data.array.lemmas
+import data.equiv.basic
 
 universes u v
 
@@ -403,3 +404,93 @@ def update {n m : ℕ} (mx : aMatrix (n+1) (m+1) cell) : aMatrix (n+1) (m+1) cel
   mx =>> local_update
 
 end wireworld
+
+-- like wire world but bistable and reversable.
+section flowgate
+
+inductive wire 
+  | low
+  | rising
+  | high
+  | falling
+
+open equiv
+open wire
+
+instance : decidable_eq wire := λ a b, 
+  by {
+   cases a; cases b; simp; try {apply decidable.true}; apply decidable.false,
+  }
+
+def wire.succ : wire → wire
+  | low := rising
+  | rising := high
+  | high := falling
+  | falling := low
+
+def wire.pred : wire → wire
+  | low := falling
+  | rising := low
+  | high := rising
+  | falling := high
+
+def forward : perm wire :=
+  {
+    to_fun := wire.succ,
+    inv_fun := wire.pred,
+    left_inv := λ x, wire.cases_on x rfl rfl rfl rfl,
+    right_inv := λ (x : wire), wire.cases_on x rfl rfl rfl rfl,
+  }
+
+abbreviation cell := option wire
+  
+def backward : perm wire := forward.symm
+
+lemma map_perm_aux {F α} [functor F] [is_lawful_functor F] 
+  {f g : α → α} {m : F α} (f_g : ∀ x, f (g x) = x) :
+  f <$> g <$> m = m :=
+by {
+  rw functor.map_map, 
+  unfold comp,
+  transitivity (id <$> m),
+  congr, funext,
+  rw f_g, unfold id,
+  rw functor.map_id,
+  unfold id,
+}
+
+def map_perm {F α} [functor F] [is_lawful_functor F] : perm α → perm (F α)
+  | ⟨f, g, g_f, f_g⟩ :=
+    {
+      to_fun := λ x : F α, f <$> x,
+      inv_fun := λ x : F α, g <$> x,
+      left_inv := λ x : F α, by {simp only, apply map_perm_aux g_f, apply _inst_2},
+      right_inv := λ x : F α, by {simp only, apply map_perm_aux f_g, apply _inst_2},
+    }
+
+def local_update {n m} (mat : aMatrix (n+1) (m+1) cell) : perm cell := 
+  match mat.read 0 with
+  | none := 1
+  | some w :=
+      let the_count := (moore_neighborhood mat).count (∈ [rising, falling].map some) in
+      if the_count = 1 ∨ the_count = 2
+        then map_perm forward
+        else 1
+  end
+
+def aMatrix.zip_with {n m} {α β γ} 
+  (m₁ : aMatrix n m α) (f : α → β → γ) (m₂ : aMatrix n m β)
+  : aMatrix n m γ
+  :=
+    let a₁ := m₁.flattened in 
+    let a₂ := m₂.flattened in 
+    aMatrix.mk ⟨λ ix, f (a₁.read ix) (a₂.read ix)⟩
+
+
+def global_update {n m} (t_minus t_zero : aMatrix (n+1) (m+1) cell)
+  : aMatrix (n+1) (m+1) cell :=
+  (t_zero =>> local_update).zip_with (λ f a, f $ a) t_minus
+
+end flowgate
+
+end
