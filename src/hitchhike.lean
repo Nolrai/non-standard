@@ -501,78 +501,12 @@ def global_update {n m} (t_minus t_zero : aMatrix (n+1) (m+1) cell)
   : aMatrix (n+1) (m+1) cell :=
   (t_zero =>> local_update).zip_with (λ f a, f $ a) t_minus
 
-structure wire' :=
-  (now : wire)
-  (pred : { p : wire // p ∈ [now, backward now]})
-
-open except
-
-def wire'.mk' (t₀ t₁ : wire) : except (plift (t₀ ∉ [t₁, backward t₁])) wire' :=
-  if h : t₀ ∈ [t₁, backward t₁]
-    then ok {wire'. now := t₁, pred := ⟨t₀, h⟩}
-    else error ⟨h⟩
+abbreviation wire' := array 2 wire
 
 abbreviation cell' := option wire'
 
-def eden {n m} (mat : aMatrix (n+1) (m+1) cell) : aMatrix (n+1) (m+1) cell' :=
-  let mk_eden_cell : cell → cell' :=
-    λ c, do
-    w <- c,
-    except.to_option 
-      (wire'.mk' w w) in
-  mk_eden_cell <$> mat 
-
 def scrape {n m} (mat : aMatrix (n+1) (m+1) cell')
   : aMatrix (n+1) (m+1) cell := 
-  (functor.map (wire'.now) : cell' → cell) <$> mat
-
-lemma eden.aux (w) : (wire'.mk' w w).to_option = some ⟨w, w, or.inl (eq.refl w)⟩ := 
-by {
-  have : ∀ {α β} (x : except α β) (b : β), x.to_option = some b ↔ x = ok b,
-  {
-    intros α β x b, cases x; unfold except.to_option, 
-    {split; intros h; cases h},
-    {split; intros h; congr; injection h},
-  },
-  unfold wire'.mk',
-  rw this,
-  split_ifs,
-  {refl},
-  apply h,
-  left,
-  refl,
-}
-
-lemma eden.preserves {n m} (mat : aMatrix (n+1) (m+1) cell) :
-  scrape (eden mat) = mat :=
-by {
-  obtain ⟨⟨d⟩ ⟩ := mat,
-  unfold scrape,
-  ext, rename a w,
-  rw map_flattened_read,
-  unfold eden,
-  simp,
-  simp_rw functor.map,
-  simp_rw eden.aux,
-  unfold aMatrix.unread,
-  simp,
-  unfold aMatrix.read array.read d_array.read,
-  simp_rw unread_read_aux,
-  simp,
-  split; intros h,
-  {
-    rw ← h,
-    congr,
-    symmetry,
-    apply unread_read_aux,
-  },
-  {
-    rw ← h,
-    congr,
-    apply unread_read_aux,
-  },
-}
-
-
+  (functor.map (λ arr : array _ _, arr.read 1) : cell' → cell) <$> mat
 
 end flowgate

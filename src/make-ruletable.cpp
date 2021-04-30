@@ -79,8 +79,24 @@ Contact: Tim Hutton <tim.hutton@gmail.com>
 enum TSymm { none, rotate4, rotate8, reflect, rotate4reflect, rotate8reflect };
 static const string symmetry_strings[] = {"none","rotate4","rotate8","reflect","rotate4reflect","rotate8reflect"};
 
-typedef enum state {None, LowWasLow, LowWasHigh, HighWasLow, HighWasHigh};
+typedef enum state {Empty, LowWasLow, LowWasHigh, HighWasLow, HighWasHigh, PastEnd};
 typedef enum LowHigh {Low, High};
+
+// prefix
+state& operator++(state& orig)
+{
+  orig = static_cast<state>(orig + 1); // static_cast required because enum + int -> int
+  // dont wrap so we can test for PastEnd
+  return orig;
+}
+
+// postfix
+state operator++(state& orig, int)
+{
+  state rVal = orig;
+  ++orig;
+  return rVal;
+}
 
 // fill in this function with your desired transition rules
 // (for von Neumann neighbourhoods, just ignore the nw,se,sw,ne inputs)
@@ -138,8 +154,8 @@ state slowcalc(state nw,state n,state ne,state w,state c,state e,state sw,state 
 
    // flowgate_simp
    state ret;
-   if (None == c) {
-      ret = None;
+   if (Empty == c) {
+      ret = Empty;
    }
    else {
       LowHigh c_now = (HighWasHigh == c | HighWasLow == c) ? High : Low;
@@ -392,7 +408,7 @@ protected:
                for(e_it = inputs[2].begin();e_it!=inputs[2].end();e_it++)
                   for(s_it = inputs[3].begin();s_it!=inputs[3].end();s_it++)
                      for(w_it = inputs[4].begin();w_it!=inputs[4].end();w_it++)
-                        if(slowcalc(0,*n_it,0,*w_it,*c_it,*e_it,0,*s_it,0)!=ns)
+                        if(slowcalc(Empty,*n_it,Empty,*w_it,*c_it,*e_it,Empty,*s_it,Empty)!=ns)
                            return false;
       }
       return true;
@@ -474,7 +490,7 @@ void print_rules(const vector<rule>& rules,ostream& out)
    out << rules_out.str();
 }
 
-void produce_rule_table(vector<rule>& rules,int N,int nhood_size,TSymm symm,bool remove_stasis)
+void produce_rule_table(vector<rule>& rules,int nhood_size,TSymm symm,bool remove_stasis)
 {
    int n_rotations,rotation_skip;
    bool do_reflect;
@@ -510,7 +526,7 @@ void produce_rule_table(vector<rule>& rules,int N,int nhood_size,TSymm symm,bool
    state c,n,ne,nw,sw,s,se,e,w,ns;
    vector<rule>::iterator it;
    bool merged;
-   for(c=0;c<N;c++)
+   for(c=Empty;c<PastEnd;c++)
    {
       cout << "\nProcessing for c=" << (int)c << ", " << rules.size() << " rules so far." << endl;
 
@@ -518,30 +534,30 @@ void produce_rule_table(vector<rule>& rules,int N,int nhood_size,TSymm symm,bool
       {
          vector<state> inputs(9);
          inputs[0]=c;
-         for(n=0;n<N;n++)
+         for(n=Empty;n<PastEnd;n++)
          {
             cout << ".";
             cout.flush();
             inputs[1]=n;
-            for(ne=0;ne<N;ne++)
+            for(ne=Empty;ne<PastEnd;ne++)
             {
                inputs[2]=ne;
-               for(e=0;e<N;e++)
+               for(e=Empty;e<PastEnd;e++)
                {
                   inputs[3]=e;
-                  for(se=0;se<N;se++)
+                  for(se=Empty;se<PastEnd;se++)
                   {
                      inputs[4]=se;
-                     for(s=0;s<N;s++)
+                     for(s=Empty;s<PastEnd;s++)
                      {
                         inputs[5]=s;
-                        for(sw=0;sw<N;sw++)
+                        for(sw=Empty;sw<PastEnd;sw++)
                         {
                            inputs[6]=sw;
-                           for(w=0;w<N;w++)
+                           for(w=Empty;w<PastEnd;w++)
                            {
                               inputs[7]=w;
-                              for(nw=0;nw<N;nw++)
+                              for(nw=Empty;nw<PastEnd;nw++)
                               {
                                  ns = slowcalc(nw,n,ne,w,c,e,sw,s,se);
                                  if(remove_stasis && ns == c)
@@ -585,20 +601,20 @@ void produce_rule_table(vector<rule>& rules,int N,int nhood_size,TSymm symm,bool
       {
          vector<state> inputs(5);
          inputs[0]=c;
-         for(n=0;n<N;n++)
+         for(n=Empty;n<PastEnd;n++)
          {
             cout << ".";
             cout.flush();
             inputs[1]=n;
-            for(e=0;e<N;e++)
+            for(e=Empty;e<PastEnd;e++)
             {
                inputs[2]=e;
-               for(s=0;s<N;s++)
+               for(s=Empty;s<PastEnd;s++)
                {
                   inputs[3]=s;
-                  for(w=0;w<N;w++)
+                  for(w=Empty;w<PastEnd;w++)
                   {
-                     ns = slowcalc(0,n,0,w,c,e,0,s,0);
+                     ns = slowcalc(Empty,n,Empty,w,c,e,Empty,s,Empty);
                      if(remove_stasis && ns == c)
                         continue; // we can ignore stasis transitions
 
@@ -637,7 +653,7 @@ void produce_rule_table(vector<rule>& rules,int N,int nhood_size,TSymm symm,bool
 }
 
 // here we use the computed rule table as a replacement slowcalc, for checking correctness
-state new_slowcalc(const vector<rule>& rules,const vector<state>& inputs) 
+state new_slowcalc(const vector<rule>& rules, const vector<state>& inputs) 
 {
    for(vector<rule>::const_iterator it=rules.begin();it!=rules.end();it++)
       if(it->matches(inputs))
@@ -645,38 +661,38 @@ state new_slowcalc(const vector<rule>& rules,const vector<state>& inputs)
     return inputs[0]; // default: no change
 }
 
-bool is_correct(const vector<rule>&rules,int N,int neighbourhood_size)
+bool is_correct(const vector<rule>&rules, int neighbourhood_size)
 {
    // exhaustive check
    state c,n,ne,nw,sw,s,se,e,w;
    if(neighbourhood_size==9)
    {
       vector<state> inputs(9);
-      for(c=0;c<N;c++)
+      for(c=Empty;c<PastEnd;c++)
       {
          inputs[0]=c;
-         for(n=0;n<N;n++)
+         for(n=Empty;n<PastEnd;n++)
          {
             inputs[1]=n;
-            for(ne=0;ne<N;ne++)
+            for(ne=Empty;ne<PastEnd;ne++)
             {
                inputs[2]=ne;
-               for(e=0;e<N;e++)
+               for(e=Empty;e<PastEnd;e++)
                {
                   inputs[3]=e;
-                  for(se=0;se<N;se++)
+                  for(se=Empty;se<PastEnd;se++)
                   {
                      inputs[4]=se;
-                     for(s=0;s<N;s++)
+                     for(s=Empty;s<PastEnd;s++)
                      {
                         inputs[5]=s;
-                        for(sw=0;sw<N;sw++)
+                        for(sw=Empty;sw<PastEnd;sw++)
                         {
                            inputs[6]=sw;
-                           for(w=0;w<N;w++)
+                           for(w=Empty;w<PastEnd;w++)
                            {
                               inputs[7]=w;
-                              for(nw=0;nw<N;nw++)
+                              for(nw=Empty;nw<PastEnd;nw++)
                               {
                                  inputs[8]=nw;
                                  if(new_slowcalc(rules,inputs) 
@@ -695,23 +711,23 @@ bool is_correct(const vector<rule>&rules,int N,int neighbourhood_size)
    else
    {
       vector<state> inputs(5);
-      for(c=0;c<N;c++)
+      for(c=Empty;c<PastEnd;c++)
       {
          inputs[0]=c;
-         for(n=0;n<N;n++)
+         for(n=Empty;n<PastEnd;n++)
          {
             inputs[1]=n;
-            for(e=0;e<N;e++)
+            for(e=Empty;e<PastEnd;e++)
             {
                inputs[2]=e;
-               for(s=0;s<N;s++)
+               for(s=Empty;s<PastEnd;s++)
                {
                   inputs[3]=s;
-                  for(w=0;w<N;w++)
+                  for(w=Empty;w<PastEnd;w++)
                   {
                      inputs[4]=w;
                      if(new_slowcalc(rules,inputs) 
-                        != slowcalc(0,n,0,w,c,e,0,s,0))
+                        != slowcalc(Empty,n,Empty,w,c,e,Empty,s,Empty))
                         return false;
                   }
                }
@@ -725,7 +741,6 @@ bool is_correct(const vector<rule>&rules,int N,int neighbourhood_size)
 int main()
 {
    // parameters for use:
-   const int N_STATES = 5;
    const TSymm symmetry = rotate8reflect;
    const int nhood_size = 9;
    const string output_filename = "flowgate2.table";
@@ -734,7 +749,7 @@ int main()
    vector<rule> rules;
    time_t t1,t2;
    time(&t1);
-   produce_rule_table(rules,N_STATES,nhood_size,symmetry,remove_stasis_transitions);
+   produce_rule_table(rules,nhood_size,symmetry,remove_stasis_transitions);
    time(&t2);
    int n_secs = (int)difftime(t2,t1);
    cout << "\nProcessing took: " << n_secs << " seconds." << endl;
@@ -753,7 +768,7 @@ int main()
          out << "\n# Default for transitions not listed: no change\n#";
       else
          out << "\n# All transitions should be included below, including no-change ones.\n#";
-      out << "\nn_states:" << N_STATES;
+      out << "\nn_states:" << PastEnd;
       out << "\nneighborhood:" << ((nhood_size==5)?("vonNeumann"):("Moore"));
       out << "\nsymmetries:" << symmetry_strings[symmetry] << "\n";
       print_rules(rules,out);
@@ -763,7 +778,7 @@ int main()
    // optional: run through the entire state space, checking that new_slowcalc matches slowcalc
    cout << "Verifying is correct (can abort if you're confident)...";
    cout.flush();
-   if(is_correct(rules,N_STATES,nhood_size))
+   if(is_correct(rules,nhood_size))
       cout << "yes." << endl;
    else
       cout << "no! Either there's a bug in the code, or the transition function does not have the symmetry you selected." << endl;
