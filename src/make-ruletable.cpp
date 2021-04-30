@@ -75,9 +75,12 @@ Contact: Tim Hutton <tim.hutton@gmail.com>
 */
 
 // some typedefs and compile-time constants
-typedef unsigned short state;
+// typedef unsigned short state;
 enum TSymm { none, rotate4, rotate8, reflect, rotate4reflect, rotate8reflect };
 static const string symmetry_strings[] = {"none","rotate4","rotate8","reflect","rotate4reflect","rotate8reflect"};
+
+typedef enum state {None, LowWasLow, LowWasHigh, HighWasLow, HighWasHigh};
+typedef enum LowHigh {Low, High};
 
 // fill in this function with your desired transition rules
 // (for von Neumann neighbourhoods, just ignore the nw,se,sw,ne inputs)
@@ -133,15 +136,67 @@ state slowcalc(state nw,state n,state ne,state w,state c,state e,state sw,state 
    // }
    // return ret;
 
+   // flowgate_simp
+   state ret;
+   if (None == c) {
+      ret = None;
+   }
+   else {
+      LowHigh c_now = (HighWasHigh == c | HighWasLow == c) ? High : Low;
+      LowHigh c_past = (LowWasHigh == c | HighWasHigh == c) ? High : Low;
+      state now[8] = {nw, n, ne, w, e, sw, s, se};
+      int count = 0;
+      for (int i = 0; i < 8; i++){
+         if (HighWasHigh == now[i] | HighWasLow == now[i]) {
+            count++;
+         }
+      }
+      LowHigh c_new = c_past;
+      switch(count) {
+         case 1:
+         case 2:
+            c_new = (High == c_new) ? Low : High;
+            break;
+         default: break; //do nothing
+      }
+      if (High == c_new) {
+         if (High == c_now) {
+            ret = HighWasHigh;
+         } else {
+            ret = HighWasLow;
+         }
+      } else {
+         if (High == c_now) {
+            ret = LowWasHigh;
+         } else {
+            ret = LowWasLow;
+         }
+      }
+   }
+   return ret;
+
    // // toggle
    // int ret;
    // if (0 == c) {
    //    ret = 0;
    // } else {
    //    int count = 0;
-   //    int arr[]
-   //    for (int i=0)
+   //    int now[8] = {nw, n, ne, w, e, sw, s, se};
+   //    for (int i=0; i < 8; i++) {
+   //       switch (now[i]) {
+   //       case 2:
+   //          count++;
+   //          break;
+   //       }
+   //    }
+   //    if (!(0 < count && count < 3)) {
+   //       ret = c;
+   //    } else {
+   //       ret = (2 == c) ? 1 : 2;
+   //    }
    // }
+   // return ret;
+
 }
 
 vector<state> rotate_inputs(const vector<state>& inputs,int rot)
@@ -671,9 +726,9 @@ int main()
 {
    // parameters for use:
    const int N_STATES = 5;
-   const TSymm symmetry = rotate8;
+   const TSymm symmetry = rotate8reflect;
    const int nhood_size = 9;
-   const string output_filename = "flowgate.table";
+   const string output_filename = "flowgate2.table";
    const bool remove_stasis_transitions = true;
 
    vector<rule> rules;
