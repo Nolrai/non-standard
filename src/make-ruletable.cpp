@@ -102,55 +102,6 @@ state operator++(state& orig, int)
 // (for von Neumann neighbourhoods, just ignore the nw,se,sw,ne inputs)
 state slowcalc(state nw,state n,state ne,state w,state c,state e,state sw,state s,state se)
 {
-   // // wireworld:
-   // switch (c) 
-   // {
-   //   case 0: return 0 ;
-   //   case 1: return 2 ;
-   //   case 2: return 3 ;
-   //   case 3:
-   //      if ((((1+(nw==1)+(n==1)+(ne==1)+(w==1)+(e==1)+(sw==1)+
-   //         (s==1)+(se==1))) | 1) == 3)
-   //         return 1 ;
-   //      else
-   //         return 3 ;
-   //   default:
-   //      return 0 ; // should throw an error here
-   // }
-
-   // // flowgate
-   // int ret;
-   // if (0 == c) {
-   //    ret = 0;
-   // }
-   // else {
-   //    int c_now = (c+1)/4;
-   //    int c_past = (c+1) % 4;
-   //    int now[8] = {nw, n, ne, w, e, sw, s, se};
-   //    for (int i = 0; i < 8; i++){
-   //       now[i] = (now[i] + 1)/4;
-   //    }
-   //    int count = 0;
-   //    for (int i = 0; i < 8; i++) {
-   //       switch(now[i]) {
-   //       case 0:
-   //       case 2:
-   //          count++;
-   //          break;
-   //       default: break;//do nothing
-   //       }
-   //    }
-   //    int c_new = c_past;
-   //    switch(count) {
-   //       case 1:
-   //       case 2:
-   //          c_new = (c_new + 1) % 4;
-   //          break;
-   //       default: break; //do nothing
-   //    }
-   //    ret = c_now + c_new * 4 + 1;
-   // }
-   // return ret;
 
    // flowgate_simp
    state ret;
@@ -190,29 +141,6 @@ state slowcalc(state nw,state n,state ne,state w,state c,state e,state sw,state 
       }
    }
    return ret;
-
-   // // toggle
-   // int ret;
-   // if (0 == c) {
-   //    ret = 0;
-   // } else {
-   //    int count = 0;
-   //    int now[8] = {nw, n, ne, w, e, sw, s, se};
-   //    for (int i=0; i < 8; i++) {
-   //       switch (now[i]) {
-   //       case 2:
-   //          count++;
-   //          break;
-   //       }
-   //    }
-   //    if (!(0 < count && count < 3)) {
-   //       ret = c;
-   //    } else {
-   //       ret = (2 == c) ? 1 : 2;
-   //    }
-   // }
-   // return ret;
-
 }
 
 vector<state> rotate_inputs(const vector<state>& inputs,int rot)
