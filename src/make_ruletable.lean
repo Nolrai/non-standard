@@ -158,6 +158,36 @@ inductive symmetries
   | reflect
   | permute
 
+open symmetries
+
+def symmetries.encode : symmetries → ℕ 
+  | none              := 0
+  | rotate2           := 1
+  | rotate4           := 2
+  | rotate8           := 3
+  | rotate4reflect    := 4
+  | rotate8reflect    := 5
+  | reflect           := 6
+  | permute           := 7
+
+def symmetries.decode : ℕ → option symmetries
+  | 0 := symmetries.none              
+  | 1 := rotate2           
+  | 2 := rotate4           
+  | 3 := rotate8           
+  | 4 := rotate4reflect    
+  | 5 := rotate8reflect    
+  | 6 := reflect           
+  | 7 := permute           
+  | (n + 8) := option.none
+
+instance : encodable symmetries :=
+  {
+    encode := symmetries.encode,
+    decode := symmetries.decode,
+    encodek := λ a, by {cases a; unfold symmetries.encode symmetries.decode; congr}
+  }
+
 structure var_line (n : ℕ) :=
   (name : string)
   (values : finset (fin n))
@@ -260,60 +290,15 @@ instance transition.le.total {nh : Type} [nh_ : neighborhood nh] {n : nat} : is_
   by {constructor, simp, intros, apply le_total}
 
 instance (nh : Type) [nh_ : neighborhood nh] (n : nat) : linear_order (transition nh n)  := 
-  { 
-    le := transition.le,
-    le_refl := λ a, by {unfold1 has_le.le, simp},
-    le_trans := λ x y z, by {simp, apply le_trans},
-    
-    le_antisymm := λ x y, 
-    by {
-      unfold_projs, simp,
-      intros x_y y_x, 
-      apply function.embedding.injective (encodable.encode' _), 
-      exact le_antisymm x_y y_x
-    },
+  linear_order.preimage (encodable.encode' _)
 
-    le_total := is_total.total,
-
-    decidable_le := transition.le.decidable,
-
-    decidable_eq := λ x y,
-    if h : encodable.encode' _ x = encodable.encode' _ y
-        then is_true (function.embedding.injective (encodable.encode' _) h)
-        else is_false (λ x_eq_y : x = y, by {apply h, congr, exact x_eq_y}),
-
-    decidable_lt := λ x y, 
-      if h : y.le x
-        then is_false 
-          (by {
-            unfold_projs,
-            unfold partial_order.lt._default preorder.lt._default,
-            simp_rw id,
-            intro h2,
-            rcases h2 with ⟨_, y_nle_x⟩,
-            exact y_nle_x h,
-          })
-        else is_true 
-          (by {
-            unfold_projs,
-            unfold partial_order.lt._default preorder.lt._default,
-            simp_rw id,
-            split,
-            {
-              have this : x.le y ∨ y.le x := is_total.total x y,
-              rcases this with x_y | y_x,
-              exact x_y,
-              {exfalso, exact h y_x}
-            },
-            assumption,
-        })
-  }
+instance : linear_order symmetries := linear_order.preimage (encodable.encode' _)
 
 infix `~>`:40 := λ α β, finmap (λ _ : α, β)
 
 structure rule_table (nh : Type) [h : neighborhood nh] :=
   (n_states : nat)
-  (symmetries: symmetries)
+  (symmetries : symmetries)
   (vars : string ~> (fin n_states))
   (transitions : rbtree (transition nh n_states))
 
