@@ -250,6 +250,15 @@ def transition.le {nh : Type} [nh_ : neighborhood nh] {n : nat} : (transition nh
 lemma transition.le.def {nh : Type} [nh_ : neighborhood nh] {n : nat} (a b : transition nh n) :
   a.le b = ((encodable.encode' (transition nh n)) ⁻¹'o (has_le.le : ℕ → ℕ → Prop)) a b := rfl
 
+instance {nh : Type} [nh_ : neighborhood nh] {n : nat} (a b : transition nh n) :
+  decidable (a.le b) := 
+  if h : encodable.encode' _ a ≤ encodable.encode' _ b
+        then is_true h
+        else is_false h
+
+instance transition.le.total {nh : Type} [nh_ : neighborhood nh] {n : nat} : is_total (transition nh n) (λ a b, a.le b) :=
+  by {constructor, simp, intros, apply le_total}
+
 instance (nh : Type) [nh_ : neighborhood nh] (n : nat) : linear_order (transition nh n)  := 
   { 
     le := transition.le,
@@ -264,19 +273,40 @@ instance (nh : Type) [nh_ : neighborhood nh] (n : nat) : linear_order (transitio
       exact le_antisymm x_y y_x
     },
 
-    le_total :=  λ x y, by {unfold_projs, simp, apply le_total},
-    decidable_le := λ x y,
-      if h : encodable.encode' _ x ≤ encodable.encode' _ y
-        then is_true h
-        else is_false h,
+    le_total := is_total.total,
+
+    decidable_le := transition.le.decidable,
+
     decidable_eq := λ x y,
     if h : encodable.encode' _ x = encodable.encode' _ y
         then is_true (function.embedding.injective (encodable.encode' _) h)
         else is_false (λ x_eq_y : x = y, by {apply h, congr, exact x_eq_y}),
-    decidable_lt := λ x y,
-    if h : encodable.encode' _ x < encodable.encode' _ y
-        then is_true h
-        else is_false h,
+
+    decidable_lt := λ x y, 
+      if h : y.le x
+        then is_false 
+          (by {
+            unfold_projs,
+            unfold partial_order.lt._default preorder.lt._default,
+            simp_rw id,
+            intro h2,
+            rcases h2 with ⟨_, y_nle_x⟩,
+            exact y_nle_x h,
+          })
+        else is_true 
+          (by {
+            unfold_projs,
+            unfold partial_order.lt._default preorder.lt._default,
+            simp_rw id,
+            split,
+            {
+              have this : x.le y ∨ y.le x := is_total.total x y,
+              rcases this with x_y | y_x,
+              exact x_y,
+              {exfalso, exact h y_x}
+            },
+            assumption,
+        })
   }
 
 infix `~>`:40 := λ α β, finmap (λ _ : α, β)
