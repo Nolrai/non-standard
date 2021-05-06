@@ -264,41 +264,114 @@ def linear_order.preimage {α β : Type} (f : α ↪ β) [lo : linear_order β] 
 
 instance {n} : linear_order (value n) := linear_order.preimage (encodable.encode' (value n))
 
-def transition (nh : Type) [nh_ : neighborhood nh] (num_states : nat) : Type := array (nh_.size + 2) (value num_states)
+structure rule (nh : Type ) [nh_ : neighborhood nh] (num_states : nat) (sym : symmetries) : Type :=
+  (orig : finset (fin num_states))
+  (inputs : array (nh_.size) (finset (fin num_states)))
+  (new_state : fin num_states)
 
-def transition.orig {nh num_states} [nh_ : neighborhood nh] (arr : transition nh num_states) : value num_states := arr.read 0
-def transition.neihborhood {nh num_states} [nh_ : neighborhood nh] (arr : transition nh num_states) (ix : nh) : value num_states :=
+def list.from_singleton {α} : list α → option α 
+  | [x] := some x
+  | _ := option.none
+
+lemma list.from_singleton.singleton {α} {a : α} : [a].from_singleton = some a := rfl
+lemma list.from_singleton.many {α} {a b : α} {bs : list α} : (a::b::bs).from_singleton = none := rfl
+
+example {α} (a : α) : [a].length = 1 := by refine list.length_singleton a
+
+def multiset.from_singleton {α} [decidable_eq α] (xs : multiset α) : option α :=
+  quotient.rec_on xs list.from_singleton (by {
+    intros,
+    cases a,
+    {
+      simp,
+      congr,
+      unfold_projs at p,
+      exact list.perm.nil_eq p,
+    },
+    cases a_tl,
+    {
+      simp,
+      congr,
+      refine list.singleton_perm.mp p,
+    },
+    {
+      have : ∃ b_hd b_tl_hd b_tl_tl, b_hd :: b_tl_hd :: b_tl_tl = b,
+      {
+        have : ∃ n, n + 2 = (a_hd :: a_tl_hd :: a_tl_tl).length, by {simp},
+        obtain ⟨n, n_length_a⟩ := this,
+        rw list.perm.length_eq p at n_length_a,
+        cases b,
+        { 
+          exfalso, 
+          suffices : n + 2 = 0, 
+          {apply (n + 1).succ_ne_zero this},
+          transitivity list.nil.length,
+          {exact n_length_a},
+          {refine list.length_eq_zero.mpr rfl},
+        },
+        cases b_tl,
+        { 
+          exfalso, 
+          suffices : n + 2 = 1, 
+          {apply nat.succ_succ_ne_one n this},
+          transitivity [b_hd].length,
+          {exact n_length_a},
+          {clear_except, apply list.length_singleton},
+        },
+        use [b_hd, b_tl_hd, b_tl_tl],
+      },
+      obtain ⟨b_hd, b_tl_hd, b_tl_tl, b_eq⟩ := this,
+      rw eq_rec_constant _ _,
+      rw ← b_eq,
+      transitivity (option.none),
+      apply list.from_singleton.many,
+      apply list.from_singleton.many.symm,
+    }
+  })
+
+def finset.from_singleton {α} [decidable_eq α] (xs : finset α) : option α := xs.val.from_singleton
+
+def rules_to_function (nh : Type ) [nh_ : neighborhood nh] (num_states : nat) (sym : symmetries) (rule_set : finset (rule nh num_states sym)) 
+  : fin num_states → array (nh_.size) (fin num_states) → option (fin num_states)
+  | center nh_array := 
+  
+
+def table_line (nh : Type) [nh_ : neighborhood nh] (num_states : nat) : Type := array (nh_.size + 2) (value num_states)
+
+def table_line.orig {nh num_states} [nh_ : neighborhood nh] (arr : table_line nh num_states) : value num_states := arr.read 0
+def table_line.neihborhood {nh num_states} [nh_ : neighborhood nh] (arr : table_line nh num_states) (ix : nh) : value num_states :=
   arr.read (neighborhood.to_ix ix)
+def table_line.new_state (nh : Type) [nh_ : neighborhood nh] (num_states : nat) (r : table_line nh num_states) := r.read (nh_.size)
 
-instance (nh : Type) [nh_ : neighborhood nh] (n : nat) : encodable (transition nh n) :=
-  encodable.of_equiv (array (nh_.size + 2) (value n)) (equiv.refl _)
+instance (nh : Type) [nh_ : neighborhood nh] (num_states : nat) : encodable (table_line nh num_states) :=
+  encodable.of_equiv (array (nh_.size + 2) (value num_states)) (equiv.refl _)
 
-def transition.le {nh : Type} [nh_ : neighborhood nh] {n : nat} : (transition nh n) → (transition nh n) → Prop :=
-  (encodable.encode' (transition nh n)) ⁻¹'o (has_le.le : ℕ → ℕ → Prop)
+def table_line.le {nh : Type} [nh_ : neighborhood nh] {num_states : nat} : (table_line nh num_states) → (table_line nh num_states) → Prop :=
+  (encodable.encode' (table_line nh num_states)) ⁻¹'o (has_le.le : ℕ → ℕ → Prop)
 
 @[simp]
-lemma transition.le.def {nh : Type} [nh_ : neighborhood nh] {n : nat} (a b : transition nh n) :
-  a.le b = ((encodable.encode' (transition nh n)) ⁻¹'o (has_le.le : ℕ → ℕ → Prop)) a b := rfl
+lemma table_line.le.def {nh : Type} [nh_ : neighborhood nh] {num_states : nat} (a b : table_line nh num_states) :
+  a.le b = ((encodable.encode' (table_line nh num_states)) ⁻¹'o (has_le.le : ℕ → ℕ → Prop)) a b := rfl
 
-instance {nh : Type} [nh_ : neighborhood nh] {n : nat} (a b : transition nh n) :
+instance {nh : Type} [nh_ : neighborhood nh] {n : nat} (a b : table_line nh n) :
   decidable (a.le b) := 
   if h : encodable.encode' _ a ≤ encodable.encode' _ b
         then is_true h
         else is_false h
 
-instance transition.le.total {nh : Type} [nh_ : neighborhood nh] {n : nat} : is_total (transition nh n) (λ a b, a.le b) :=
+instance table_line.le.total {nh : Type} [nh_ : neighborhood nh] {n : nat} : is_total (table_line nh n) (λ a b, a.le b) :=
   by {constructor, simp, intros, apply le_total}
 
-instance (nh : Type) [nh_ : neighborhood nh] (n : nat) : linear_order (transition nh n)  := 
+instance (nh : Type) [nh_ : neighborhood nh] (n : nat) : linear_order (table_line nh n)  := 
   linear_order.preimage (encodable.encode' _)
 
 instance : linear_order symmetries := linear_order.preimage (encodable.encode' _)
 
 infix `~>`:40 := λ α β, finmap (λ _ : α, β)
 
-structure rule_table (nh : Type) [h : neighborhood nh] :=
+structure table (nh : Type) [h : neighborhood nh] :=
   (n_states : nat)
   (symmetries : symmetries)
   (vars : string ~> (fin n_states))
-  (transitions : rbtree (transition nh n_states))
+  (table_lines : rbtree (table_line nh n_states))
 

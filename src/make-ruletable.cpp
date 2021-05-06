@@ -79,8 +79,28 @@ Contact: Tim Hutton <tim.hutton@gmail.com>
 enum TSymm { none, rotate4, rotate8, reflect, rotate4reflect, rotate8reflect };
 static const string symmetry_strings[] = {"none","rotate4","rotate8","reflect","rotate4reflect","rotate8reflect"};
 
-typedef enum state {Empty, LowWasLow, LowWasHigh, HighWasLow, HighWasHigh, PastEnd};
-typedef enum LowHigh {Low, High};
+enum state {Empty, LowWasLow, LowWasHigh, HighWasLow, HighWasHigh, PastEnd};
+enum LowHigh {Low, High};
+
+state operator-(state& orig)
+{
+   switch (orig)
+   {
+      case Empty: 
+         return Empty;
+      case LowWasLow:
+          return HighWasHigh;
+      case LowWasHigh:
+          return HighWasLow;
+      case HighWasLow:
+         return LowWasHigh;
+      case HighWasHigh:
+         return LowWasLow;
+      case PastEnd:
+         return PastEnd;
+   }
+   __throw_bad_function_call();
+}
 
 // prefix
 state& operator++(state& orig)
@@ -103,7 +123,7 @@ state operator++(state& orig, int)
 state slowcalc(state nw,state n,state ne,state w,state c,state e,state sw,state s,state se)
 {
 
-   // flowgate_simp
+   // toggle
    state ret;
    if (Empty == c) {
       ret = Empty;
@@ -114,8 +134,11 @@ state slowcalc(state nw,state n,state ne,state w,state c,state e,state sw,state 
       state now[8] = {nw, n, ne, w, e, sw, s, se};
       int count = 0;
       for (int i = 0; i < 8; i++){
-         if (HighWasHigh == now[i] | HighWasLow == now[i]) {
-            count++;
+         if (Empty != now[i]) {
+            LowHigh nowAtI = (HighWasHigh == now[i] | HighWasLow == now[i]) ? High : Low;
+            if ( nowAtI != c_now) {
+               count++;
+            }
          }
       }
       LowHigh c_new = c_past;
@@ -589,6 +612,93 @@ state new_slowcalc(const vector<rule>& rules, const vector<state>& inputs)
     return inputs[0]; // default: no change
 }
 
+bool is_day_night (int neighbourhood_size) 
+{
+// exhaustive check
+   state c,n,ne,nw,sw,s,se,e,w;
+   if(neighbourhood_size==9)
+   {
+      vector<state> inputs(9);
+      for(c=Empty;c<PastEnd;c++)
+      {
+         inputs[0]=c;
+         for(n=Empty;n<PastEnd;n++)
+         {
+            inputs[1]=n;
+            for(ne=Empty;ne<PastEnd;ne++)
+            {
+               inputs[2]=ne;
+               for(e=Empty;e<PastEnd;e++)
+               {
+                  inputs[3]=e;
+                  for(se=Empty;se<PastEnd;se++)
+                  {
+                     inputs[4]=se;
+                     for(s=Empty;s<PastEnd;s++)
+                     {
+                        inputs[5]=s;
+                        for(sw=Empty;sw<PastEnd;sw++)
+                        {
+                           inputs[6]=sw;
+                           for(w=Empty;w<PastEnd;w++)
+                           {
+                              inputs[7]=w;
+                              for(nw=Empty;nw<PastEnd;nw++)
+                              {
+                                 inputs[8]=nw;
+                                 state night = slowcalc(-nw,-n,-ne,-w,-c,-e,-sw,-s,-se);
+                                 state day = slowcalc(nw,n,ne,w,c,e,sw,s,se);
+                                 if(day != -night)
+                                 {
+                                    cout << "inputs: " << endl;
+                                    cout << nw << n << ne << endl;
+                                    cout << w << c << e << endl;
+                                    cout << sw << s << se << endl;
+                                    cout << "day = " << day << endl;
+                                    cout << "night = " << night << endl;
+                                    cout << "-night = " << -night << endl;
+                                    return false;
+                                 }
+                              }
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+         }
+      }
+   }
+   else
+   {
+      vector<state> inputs(5);
+      for(c=Empty;c<PastEnd;c++)
+      {
+         inputs[0]=c;
+         for(n=Empty;n<PastEnd;n++)
+         {
+            inputs[1]=n;
+            for(e=Empty;e<PastEnd;e++)
+            {
+               inputs[2]=e;
+               for(s=Empty;s<PastEnd;s++)
+               {
+                  inputs[3]=s;
+                  for(w=Empty;w<PastEnd;w++)
+                  {
+                     inputs[4]=w;
+                     if(-slowcalc(Empty,-n,Empty,-w,-c,-e,Empty,-s,Empty) 
+                        != slowcalc(Empty,n,Empty,w,c,e,Empty,s,Empty))
+                        return false;
+                  }
+               }
+            }
+         }
+      }
+   }
+   return true;
+}
+
 bool is_correct(const vector<rule>&rules, int neighbourhood_size)
 {
    // exhaustive check
@@ -671,8 +781,15 @@ int main()
    // parameters for use:
    const TSymm symmetry = rotate8reflect;
    const int nhood_size = 9;
-   const string output_filename = "flowgate2.table";
+   const bool day_night_expected = true;
+   const string output_filename = "toggle.table";
    const bool remove_stasis_transitions = true;
+
+   if (day_night_expected != is_day_night(nhood_size))
+   {
+      cout << "Day night symmetry was " << (day_night_expected ? "" : "not ") << "expected to hold, but it did " << (day_night_expected ? "not " : "") << "!";
+      exit(EXIT_FAILURE);
+   }
 
    vector<rule> rules;
    time_t t1,t2;
