@@ -1,0 +1,176 @@
+@RULE Toggle
+
+@TABLE
+# rules: 28
+#
+# Golly rule-table format.
+# Each rule: C,N,NE,E,SE,S,SW,W,NW,C'
+# N.B. Where the same variable appears multiple times in a transition,
+# it takes the same value each time.
+#
+# Default for transitions not listed: no change
+#
+n_states:5
+neighborhood:Moore
+symmetries:rotate8reflect
+var a={0,1,2}
+var b={0,1,2}
+var c={0,1,2}
+var d={0,1,2}
+var e={0,1,2}
+var f={0,1,2}
+var g={0,1,2,3,4}
+var h={3,4}
+var i={3,4}
+var j={0,1,2}
+var k={0,1,2}
+var l={0,1,2,3,4}
+var m={0,1,2,3,4}
+var n={0,1,2,3,4}
+var o={0,1,2,3,4}
+var p={3,4}
+var q={0,3,4}
+var r={0,3,4}
+var s={0,3,4}
+var t={0,3,4}
+var u={0,3,4}
+var v={0,3,4}
+var w={0,3,4}
+var x={0,3,4}
+var y={1,2}
+var z={1,2}
+var A={1,2}
+1,a,b,c,d,e,f,g,h,3
+1,a,b,c,d,e,h,f,i,3
+1,a,b,c,d,h,e,f,i,3
+1,a,b,c,h,d,e,f,i,3
+2,a,b,c,d,e,f,j,k,3
+2,a,b,c,d,e,f,g,h,1
+2,a,b,c,d,e,h,f,i,1
+2,g,l,m,n,o,h,i,p,3
+2,a,b,c,d,h,e,f,i,1
+2,a,g,l,m,h,b,i,p,3
+2,a,b,c,h,d,e,f,i,1
+2,a,b,g,h,c,d,i,p,3
+2,a,g,b,h,c,i,d,p,3
+2,a,b,h,c,d,i,e,p,3
+3,q,r,s,t,u,v,w,x,2
+3,q,r,s,t,u,v,g,y,4
+3,q,r,s,t,u,y,v,z,4
+3,g,l,m,n,o,y,z,A,2
+3,q,r,s,t,A,u,v,y,4
+3,q,g,l,m,A,r,y,z,2
+3,q,r,s,A,t,u,v,y,4
+3,q,r,g,A,s,t,y,z,2
+3,q,g,r,A,s,y,t,z,2
+3,q,r,A,s,t,y,u,z,2
+4,q,r,s,t,u,v,g,A,2
+4,q,r,s,t,u,A,v,y,2
+4,q,r,s,t,A,u,v,y,2
+4,q,r,s,A,t,u,v,y,2
+
+@NAMES
+
+# these state names are not yet used by Golly
+0 empty
+1 Low was Low
+2 Low was High
+3 High was Low
+4 High was High
+
+@COLORS
+
+# same colors used at http://www.quinapalus.com/wi-index.html
+0  48  48  48   dark gray
+1 255 128   0   orange
+2 255 192  64   pale orange
+3   0  64 255   blue
+4   0 128 255   light blue
+
+@ICONS
+
+# icon info is in XPM format (order is not important)
+
+XPM
+/* width height num_colors chars_per_pixel */
+"31 31 5 1"
+/* colors */
+". c #000000"
+"D c #404040"
+"C c #808080"
+"B c #C0C0C0"
+"W c #FFFFFF"
+/* pixels */
+"..............................."
+"..............................."
+"..........DCBWWWWWBCD.........."
+".........CWWWWWWWWWWWC........."
+".......DWWWWWWWWWWWWWWWD......."
+"......BWWWWWWWWWWWWWWWWWB......"
+".....BWWWWWWWWWWWWWWWWWWWB....."
+"....DWWWWWWWWWWWWWWWWWWWWWD...."
+"....WWWWWWWWWWWWWWWWWWWWWWW...."
+"...CWWWWWWWWWWWWWWWWWWWWWWWC..."
+"..DWWWWWWWWWWWWWWWWWWWWWWWWWD.."
+"..CWWWWWWWWWWWWWWWWWWWWWWWWWC.."
+"..BWWWWWWWWWWWWWWWWWWWWWWWWWB.."
+"..WWWWWWWWWWWWWWWWWWWWWWWWWWW.."
+"..WWWWWWWWWWWWWWWWWWWWWWWWWWW.."
+"..WWWWWWWWWWWWWWWWWWWWWWWWWWW.."
+"..WWWWWWWWWWWWWWWWWWWWWWWWWWW.."
+"..WWWWWWWWWWWWWWWWWWWWWWWWWWW.."
+"..BWWWWWWWWWWWWWWWWWWWWWWWWWB.."
+"..CWWWWWWWWWWWWWWWWWWWWWWWWWC.."
+"..DWWWWWWWWWWWWWWWWWWWWWWWWWD.."
+"...CWWWWWWWWWWWWWWWWWWWWWWWC..."
+"....WWWWWWWWWWWWWWWWWWWWWWW...."
+"....DWWWWWWWWWWWWWWWWWWWWWD...."
+".....BWWWWWWWWWWWWWWWWWWWB....."
+"......BWWWWWWWWWWWWWWWWWB......"
+".......DWWWWWWWWWWWWWWWD......."
+".........CWWWWWWWWWWWC........."
+"..........DCBWWWWWBCD.........."
+"..............................."
+"..............................."
+
+XPM
+/* width height num_colors chars_per_pixel */
+"15 15 4 1"
+/* colors */
+". c #000000"
+"D c #404040"
+"B c #C0C0C0"
+"W c #FFFFFF"
+/* pixels */
+"..............."
+"....DBWWWBD...."
+"...BWWWWWWWB..."
+"..BWWWWWWWWWB.."
+".DWWWWWWWWWWWD."
+".BWWWWWWWWWWWB."
+".WWWWWWWWWWWWW."
+".WWWWWWWWWWWWW."
+".WWWWWWWWWWWWW."
+".BWWWWWWWWWWWB."
+".DWWWWWWWWWWWD."
+"..BWWWWWWWWWB.."
+"...BWWWWWWWB..."
+"....DBWWWBD...."
+"..............."
+
+XPM
+/* width height num_colors chars_per_pixel */
+"7 7 4 1"
+/* colors */
+". c #000000"
+"D c #404040"
+"E c #E0E0E0"
+"W c #FFFFFF"
+/* pixels */
+".DEWED."
+"DWWWWWD"
+"EWWWWWE"
+"WWWWWWW"
+"EWWWWWE"
+"DWWWWWD"
+".DEWED."
