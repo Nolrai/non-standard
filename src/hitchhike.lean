@@ -93,28 +93,70 @@ def aMatrix.read.aux {n m : ℕ} (x : fin n) (y : fin m) : fin (n * m) :=
 def aMatrix.read {n m : ℕ} {α} (M : aMatrix n m α) : store (fin n × fin m) α :=
   λ (p : fin n × fin m), M.flattened.read (aMatrix.read.aux p.1 p.2)
 
-def aMatrix.unread {α} {n m : ℕ} (f : store (fin n × fin m) α) : aMatrix n m α := 
-  ⟨⟨
-    λ ix : fin (n * m),
-      let x : fin n := ⟨ix.val / m, by {cases ix, simp, apply nat.div_lt_of_lt_mul, rw mul_comm, assumption}⟩ in
-      have m_pos : 0 < m,
+abbreviation aMatrix.unread.aux_x {n m : ℕ} (ix : fin (n * m)) : fin n :=
+  ⟨ix.val / m, by {cases ix, simp, apply nat.div_lt_of_lt_mul, rw mul_comm, assumption}⟩
+
+abbreviation aMatrix.unread.aux_y {n m : ℕ} (ix : fin (n * m)) : fin m :=
+  have m_pos : 0 < m,
       {
         cases m,
         {rw mul_zero at ix, apply fin_zero_elim ix},
         {apply nat.zero_lt_succ}
       },
-      let y : fin m := ⟨ix.val % m, nat.mod_lt ix.val m_pos⟩ in  
+  ⟨ix.val % m, nat.mod_lt ix.val m_pos⟩ 
+
+def aMatrix.unread {α} {n m : ℕ} (f : store (fin n × fin m) α) : aMatrix n m α := 
+  ⟨⟨
+    λ ix : fin (n * m),
+      let x : fin n := aMatrix.unread.aux_x ix in
+      let y : fin m := aMatrix.unread.aux_y ix in
       f (x, y)
   ⟩⟩
 
-lemma unread_read_aux (n m : ℕ) (ix : fin (n * m)) (p q) : 
-  (aMatrix.read.aux ⟨↑ix / m, p⟩ ⟨↑ix % m, q⟩) = ix :=
+lemma unread_read_aux (n m : ℕ) (ix : fin (n * m)) : 
+  (aMatrix.read.aux (aMatrix.unread.aux_x ix) (aMatrix.unread.aux_y ix)) = ix :=
 by {
   obtain ⟨ix, ix_h⟩ := ix,
   unfold aMatrix.read.aux,
   simp,
-  clear p q ix_h,
   exact nat.div_add_mod ix m,
+}
+
+def fin.prod_equiv {n m : ℕ} : fin n × fin m ≃ fin (n * m) := {
+  to_fun := function.uncurry aMatrix.read.aux,
+  inv_fun := λ ix, ⟨aMatrix.unread.aux_x ix, aMatrix.unread.aux_y ix⟩,
+
+  left_inv := λ ix, by {
+    obtain ⟨⟨x, x_lt_n⟩, ⟨y, y_lt_m⟩⟩ := ix,
+    unfold uncurry,
+    unfold aMatrix.read.aux,
+    simp,
+    have m_pos : 0 < m, 
+      {cases m, cases y_lt_m, exact pos_of_gt y_lt_m},
+    have n_pos : 0 < n, 
+      {cases n, cases x_lt_n, exact pos_of_gt x_lt_n},
+    split,
+    {
+      have : _ := nat.add_mul_div_left y x m_pos,
+      rw add_comm,
+      rw this,
+      have : y / m = 0 := nat.div_eq_zero y_lt_m,
+      rw this,
+      apply zero_add,
+    },
+    {
+      rw add_comm,
+      rw mul_comm,
+      rw nat.add_mul_mod_self_right y x m,
+      exact nat.mod_eq_of_lt y_lt_m,
+    }
+  },
+
+  right_inv := by {
+    intros ix,
+    apply unread_read_aux
+  }
+
 }
 
 @[simp]
@@ -148,20 +190,6 @@ lemma cspam2 {x y : ℕ} : x < y → 0 < y :=
     }
   }
 
-lemma cspam3 {x y z : ℕ} (z_pos : 0 < z) (y_lt_z : y < z) : (z * x + y) / z = x :=
-by {
-  induction x with x x_ih,
-  {
-    rw mul_zero,
-    rw zero_add,
-    apply (nat.div_eq_zero_iff z_pos).mpr y_lt_z,
-  },
-  {
-    calc (z*x.succ + y)/z = (x.succ + y/z) : 
-      by {rw add_comm, rw nat.add_mul_div_left, rw add_comm, exact z_pos}
-      ... = x.succ + 0 : by {have H : y/z = 0, apply nat.div_eq_zero y_lt_z, rw H}
-  }
-}
 
 @[simp]
 lemma read_unread {n m : ℕ} {α} (f : store (fin n × fin m) α) : (aMatrix.unread f).read = f :=
@@ -176,8 +204,15 @@ by {
   unfold aMatrix.read.aux, simp,
   have m_pos : 0 < m := cspam2 y_property,
   congr,
-  {exact cspam3 m_pos y_property},
   {
+    ext, simp only [fin.coe_mk],
+    rw add_comm,
+    rw nat.add_mul_div_left y_val x_val m_pos,
+    rw (nat.div_eq_zero y_property),
+    rw zero_add,
+  },
+  {
+    ext, simp only [fin.coe_mk],
     rw nat.add_mod,
     rw nat.mul_mod_right,
     rw zero_add,

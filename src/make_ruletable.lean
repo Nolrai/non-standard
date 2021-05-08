@@ -87,7 +87,7 @@ def fin.toMoore.aux : ∀ x : fin 8, x.toMoore.to_fin8 = x
   | ⟨7, _⟩ := rfl
   | ⟨n+8, p⟩ := false.rec _ (not_le.mpr p ((8 : ℕ).le_add_left n))
 
-def Moore_fin4 : Moore ≃ fin 8 :=
+def Moore_fin8 : Moore ≃ fin 8 :=
 { 
   to_fun := Moore.to_fin8,
   inv_fun := fin.toMoore,
@@ -97,9 +97,11 @@ def Moore_fin4 : Moore ≃ fin 8 :=
 
 class neighborhood (α : Type) :=
   (size : nat)
-  (to_ix : α ≃ fin size)
+  (to_ix' : α ≃ fin size)
   (rotate_one : α → α)
   (reflect : α → α)
+
+def to_ix {α} [neighborhood α] : α ≃ fin (neighborhood.size α) := neighborhood.to_ix'
 
 def vonNeumann.rotate_one : vonNeumann → vonNeumann
   | N := E
@@ -115,7 +117,7 @@ def vonNeumann.reflect : vonNeumann → vonNeumann
 instance : neighborhood vonNeumann := 
   {
     size := 4,
-    to_ix := vonNeumann_fin4,
+    to_ix' := vonNeumann_fin4,
     rotate_one := vonNeumann.rotate_one, 
     reflect := vonNeumann.reflect
   }
@@ -143,7 +145,7 @@ def Moore.reflect : Moore → Moore
 instance : neighborhood Moore :=
 { 
   size := 8,
-  to_ix := Moore_fin4,
+  to_ix' := Moore_fin8,
   rotate_one := Moore.rotate_one,
   reflect := Moore.reflect
 }
@@ -340,7 +342,7 @@ def table_line (nh : Type) [nh_ : neighborhood nh] (num_states : nat) : Type := 
 
 def table_line.orig {nh num_states} [nh_ : neighborhood nh] (arr : table_line nh num_states) : value num_states := arr.read 0
 def table_line.neihborhood {nh num_states} [nh_ : neighborhood nh] (arr : table_line nh num_states) (ix : nh) : value num_states :=
-  arr.read (neighborhood.to_ix ix)
+  arr.read (to_ix ix)
 def table_line.new_state (nh : Type) [nh_ : neighborhood nh] (num_states : nat) (r : table_line nh num_states) := r.read (nh_.size)
 
 instance (nh : Type) [nh_ : neighborhood nh] (num_states : nat) : encodable (table_line nh num_states) :=
