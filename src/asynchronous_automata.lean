@@ -75,7 +75,34 @@ def template.from_fun {α} (f : inside_outside → vonNeumann → α) : template
 
 def ACA_rule (α) := (template α → template α → Prop)
 
-def ACA_board (n m) (α : Type) := aMatrix n m (vonNeumann → α) 
+structure xcell (α : Type) := (to_array : array 4 α)
+
+def xcell.read {α} (c : xcell α) (dir : vonNeumann) : α := c.to_array.read (vonNeumann_fin4 dir)
+def xcell.write {α} (c : xcell α) (dir : vonNeumann) (a : α) : xcell α := 
+  ⟨c.to_array.write (vonNeumann_fin4 dir) a⟩
+
+@[ext]
+lemma xcell.ext {α} (a b : xcell α) : (∀ vn, a.read vn = b.read vn) ↔ a = b :=
+by {
+  split,
+  {
+    intros hyp,
+    obtain ⟨a⟩ := a, obtain ⟨b⟩ := b,
+    congr,
+    ext,
+    transitivity ({xcell . to_array := a}.read (vonNeumann_fin4.inv_fun i)),
+      {unfold xcell.read, simp},
+      {rw hyp, unfold xcell.read, simp}
+  },
+  {
+    intros hyp,
+    simp_rw hyp,
+    intros vn,
+    refl,
+  },
+}
+
+def ACA_board (n m) (α : Type) := aMatrix n m (xcell α) 
 
 open vonNeumann
 
@@ -100,17 +127,17 @@ lemma vonNeumann.neg_involution (dir : vonNeumann) : -(-dir) = dir :=
   | S := rfl
   | W := rfl
   end
-    
+
 def read_template.aux {n m} {α : Type} 
-  (mat : aMatrix (n+1) (m+1) (vonNeumann → α)) 
+  (mat : ACA_board (n+1) (m+1) α) 
   (ix : fin (n+1) × fin (m+1)) : inside_outside → vonNeumann → α
-  | inside dir := (mat.read ix) dir
+  | inside dir := (mat.read ix).read dir
   | outside dir := 
     let offset : (fin (n+1) × fin (m+1)) := dir.to_index in
-    mat.read (ix.1 + offset.1, ix.2 + offset.2) (-dir)
+    (mat.read (ix.1 + offset.1, ix.2 + offset.2)).read (-dir)
 
 def read_template {n m} {α : Type} 
-  (mat : aMatrix (n+1) (m+1) (vonNeumann → α)) 
+  (mat : ACA_board (n+1) (m+1) α)
   (ix : fin (n+1) × fin (m+1)) :
   template α := template.from_fun (read_template.aux mat ix)
 
@@ -157,11 +184,10 @@ def vonNeumann.decidable_eq.aux {α} [decidable_eq α] (f g : vonNeumann → α)
     then is_true (by {rcases h with ⟨h_n, h_e, h_s, h_w⟩, intros x, cases x; assumption})
     else is_false (λ all, h (by {simp_rw all, repeat {split; try {refl}}}))
 
-instance {α} [decidable_eq α] : decidable_eq (vonNeumann → α) :=
+instance {α} [decidable_eq α] : decidable_eq (xcell α) :=
   by {
     intros a b,
-    have H : (a = b) ↔ (∀ nv, a nv = b nv) := by {split; intros h, {intros x, rw h}, funext, apply h},
-    rw H,
+    rw ← xcell.ext,
     apply vonNeumann.decidable_eq.aux,
   }
 
@@ -220,7 +246,7 @@ def ACA_rules.from_list : list (array 2 (array 8 (fin 2))) →  rbmap (template 
         | ⟨[old, new], _⟩ := ⟨old, new⟩
         end
       in
-    (l.map to_templates)
+    rbmap_of (l.map to_templates)
 
 def convert_from_dixons : array 8 (fin 2) → array 8 (fin 2)
   | arr := 
@@ -257,3 +283,25 @@ def template.print {α} (to_char : α → char) (t : template α) : string :=
 
 instance : has_to_string (template bool) := ⟨template.print (λ b, if b then '╬' else '█')⟩
 
+def aMatrix.write {n m : ℕ} {α} (M : aMatrix n m α) (ix : fin n × fin m) (a : α) : aMatrix n m α :=
+  ⟨M.flattened.write (aMatrix.read.aux ix.1 ix.2) a⟩
+
+def write_template.aux {n m} {α : Type} 
+  (mat : aMatrix (n+1) (m+1) (xcell α)) 
+  (ix : fin (n+1) × fin (m+1)) : inside_outside → vonNeumann → α → aMatrix (n+1) (m+1) (xcell α)
+  | inside  dir a := let old := (mat.read ix) in mat.write ix (old.write dir a) 
+  | outside dir a := 
+    let offset : (fin (n+1) × fin (m+1)) := dir.to_index in
+    let ix' := (ix.1 + offset.1, ix.2 + offset.2) in
+    let old := (mat.read ix') in
+    mat.write ix (old.write (-dir) a)
+
+def write_template {n m : ℕ} {α : Type} 
+  (M : ACA_board (n+1) (m+1) α) (ix : fin (n+1) × fin (m+1)) (t : template α) :
+  ACA_board (n+1) (m+1) α :=
+  let action_list : list (ACA_board (n+1) (m+1) α → ACA_board (n+1) (m+1) α) :=
+    do
+    i_o <- [inside, outside],
+    dir <- [N, E, S, W],
+    pure (λ m : ACA_board (n+1) (m+1) α, write_template.aux m ix i_o dir (t.read i_o dir)) in
+  action_list.foldl (λ m f, f m) M
