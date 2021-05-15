@@ -43,6 +43,14 @@ def vonNeumann_fin4 : vonNeumann ≃ fin 4 :=
   right_inv := λ x, by {apply vonNeumann.aux}
 }
 
+example {α β} (eqi : α ≃ β) : α ↪ β := equiv.to_embedding eqi
+
+instance : fintype vonNeumann := 
+  { 
+    elems := (fintype.elems (fin 4)).map vonNeumann_fin4.symm.to_embedding,
+    complete := λ nv, finset.mem_map_equiv.mpr (fintype.complete _)
+  }
+
 inductive Moore
   | NN
   | NE
@@ -95,21 +103,29 @@ def Moore_fin8 : Moore ≃ fin 8 :=
   right_inv := λ x, by {apply fin.toMoore.aux}
 }
 
+prefix `¡`:50 := equiv.perm
+
 class neighborhood (α : Type) :=
   (size : nat)
   (to_ix' : α ≃ fin size)
-  (rotate_one : α → α)
-  (reflect : α → α)
+  ( rotate_clockwise : ¡α)
+  (reflect : ¡α)
 
 def to_ix {α} [neighborhood α] : α ≃ fin (neighborhood.size α) := neighborhood.to_ix'
 
-def vonNeumann.rotate_one : vonNeumann → vonNeumann
+def vonNeumann.rotate_clockwise' : vonNeumann → vonNeumann
   | N := E
   | E := S
   | S := W
   | W := N
 
-def vonNeumann.reflect : vonNeumann → vonNeumann
+def vonNeumann.rotate_positive' : vonNeumann → vonNeumann
+  | N := W
+  | E := N
+  | S := E
+  | W := S
+
+def vonNeumann.reflect' : vonNeumann → vonNeumann
   | E := W
   | W := E
   | x := x
@@ -118,11 +134,23 @@ instance : neighborhood vonNeumann :=
   {
     size := 4,
     to_ix' := vonNeumann_fin4,
-    rotate_one := vonNeumann.rotate_one, 
-    reflect := vonNeumann.reflect
+    rotate_clockwise := 
+     { 
+      to_fun := vonNeumann.rotate_clockwise',
+      inv_fun := vonNeumann.rotate_positive',
+      left_inv := by {intro x, cases x; unfold vonNeumann.rotate_clockwise' vonNeumann.rotate_positive'},
+      right_inv := by {intro x, cases x; unfold vonNeumann.rotate_clockwise' vonNeumann.rotate_positive'},
+     }, 
+    reflect := 
+    { 
+      to_fun := vonNeumann.reflect',
+      inv_fun := vonNeumann.reflect',
+      left_inv := by {intro x, cases x; unfold vonNeumann.reflect'},
+      right_inv := by {intro x, cases x; unfold vonNeumann.reflect'},
+     }
   }
 
-def Moore.rotate_one : Moore → Moore
+def Moore.rotate_clockwise' : Moore → Moore
   | NN := NE
   | NE := EE
   | EE := SE
@@ -132,8 +160,17 @@ def Moore.rotate_one : Moore → Moore
   | WW := NW
   | NW := NN
 
+def Moore.rotate_positive' : Moore → Moore
+  | NN := NW
+  | NE := NN
+  | EE := NE
+  | SE := EE
+  | SS := SE
+  | SW := SS
+  | WW := SW
+  | NW := WW
 
-def Moore.reflect : Moore → Moore
+def Moore.reflect' : Moore → Moore
   | NE := NW
   | NW := NE
   | EE := WW
@@ -146,9 +183,24 @@ instance : neighborhood Moore :=
 { 
   size := 8,
   to_ix' := Moore_fin8,
-  rotate_one := Moore.rotate_one,
-  reflect := Moore.reflect
+  rotate_clockwise := 
+    { 
+    to_fun := Moore.rotate_clockwise',
+    inv_fun := Moore.rotate_positive',
+    left_inv := by {intro x, cases x; unfold Moore.rotate_clockwise' Moore.rotate_positive'},
+    right_inv := by {intro x, cases x; unfold Moore.rotate_clockwise' Moore.rotate_positive'},
+    }, 
+  reflect := 
+  { 
+    to_fun := Moore.reflect',
+    inv_fun := Moore.reflect',
+    left_inv := by {intro x, cases x; unfold Moore.reflect'},
+    right_inv := by {intro x, cases x; unfold Moore.reflect'},
+    }
 }
+
+def rotate_clockwise {α} [neighborhood α] : α ≃ α := neighborhood.rotate_clockwise
+def reflect_nh {α} [neighborhood α] : α ≃ α := neighborhood.reflect
 
 inductive symmetries
   | none
@@ -335,8 +387,7 @@ def finset.from_singleton {α} [decidable_eq α] (xs : finset α) : option α :=
 
 def rules_to_function (nh : Type ) [nh_ : neighborhood nh] (num_states : nat) (sym : symmetries) (rule_set : finset (rule nh num_states sym)) 
   : fin num_states → array (nh_.size) (fin num_states) → option (fin num_states)
-  | center nh_array := 
-  
+  | center nh_array := sorry
 
 def table_line (nh : Type) [nh_ : neighborhood nh] (num_states : nat) : Type := array (nh_.size + 2) (value num_states)
 
