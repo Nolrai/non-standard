@@ -1,5 +1,157 @@
-import .hitchhike
-import .make_ruletable
+import data.equiv.basic
+import data.equiv.list
+
+inductive vonNeumann
+  | N
+  | E
+  | S
+  | W
+
+open vonNeumann
+
+def vonNeumann.to_fin4 (dir : vonNeumann) : fin 4 :=
+  match dir with
+  | N := 0
+  | E := 1
+  | S := 2
+  | W := 3
+  end
+
+def fin.to_vonNeumann  : fin 4 → vonNeumann
+  | ⟨0, _⟩ := N
+  | ⟨1, _⟩ := E 
+  | ⟨2, _⟩ := S
+  | ⟨3, _⟩ := W
+  | ⟨n+4, p⟩ := false.rec vonNeumann (not_le.mpr p ((4 : ℕ).le_add_left n))
+
+lemma vonNeumann.aux (x : fin 4) : x.to_vonNeumann.to_fin4 = x :=
+  match x with
+  | ⟨0, _⟩ := rfl
+  | ⟨1, _⟩ := rfl 
+  | ⟨2, _⟩ := rfl
+  | ⟨3, _⟩ := rfl
+  | ⟨n+4, p⟩ := false.rec _ (not_le.mpr p ((4 : ℕ).le_add_left n))
+  end
+
+def vonNeumann_fin4 : vonNeumann ≃ fin 4 :=
+{ 
+  to_fun := vonNeumann.to_fin4,
+  inv_fun := fin.to_vonNeumann,
+  left_inv := λ x, by {cases x; unfold vonNeumann.to_fin4; refl},
+  right_inv := λ x, by {apply vonNeumann.aux}
+}
+
+example {α β} (eqi : α ≃ β) : α ↪ β := equiv.to_embedding eqi
+
+instance : fintype vonNeumann := 
+  { 
+    elems := (fintype.elems (fin 4)).map vonNeumann_fin4.symm.to_embedding,
+    complete := λ nv, finset.mem_map_equiv.mpr (fintype.complete _)
+  }
+
+prefix `¡`:50 := equiv.perm
+
+class neighborhood (α : Type) :=
+  (size : nat)
+  (to_ix' : α ≃ fin size)
+  ( rotate_clockwise : ¡α)
+  (reflect : ¡α)
+
+def to_ix {α} [neighborhood α] : α ≃ fin (neighborhood.size α) := neighborhood.to_ix'
+
+def vonNeumann.rotate_clockwise' : vonNeumann → vonNeumann
+  | N := E
+  | E := S
+  | S := W
+  | W := N
+
+def vonNeumann.rotate_positive' : vonNeumann → vonNeumann
+  | N := W
+  | E := N
+  | S := E
+  | W := S
+
+def vonNeumann.reflect' : vonNeumann → vonNeumann
+  | E := W
+  | W := E
+  | x := x
+
+instance : neighborhood vonNeumann := 
+  {
+    size := 4,
+    to_ix' := vonNeumann_fin4,
+    rotate_clockwise := 
+     { 
+      to_fun := vonNeumann.rotate_clockwise',
+      inv_fun := vonNeumann.rotate_positive',
+      left_inv := by {intro x, cases x; unfold vonNeumann.rotate_clockwise' vonNeumann.rotate_positive'},
+      right_inv := by {intro x, cases x; unfold vonNeumann.rotate_clockwise' vonNeumann.rotate_positive'},
+     }, 
+    reflect := 
+    { 
+      to_fun := vonNeumann.reflect',
+      inv_fun := vonNeumann.reflect',
+      left_inv := by {intro x, cases x; unfold vonNeumann.reflect'},
+      right_inv := by {intro x, cases x; unfold vonNeumann.reflect'},
+     }
+  }
+
+def rotate_clockwise {α} [neighborhood α] : α ≃ α := neighborhood.rotate_clockwise
+def reflect_nh {α} [neighborhood α] : α ≃ α := neighborhood.reflect
+
+inductive symmetries
+  | none
+  | rotate2
+  | rotate4
+  | rotate4reflect
+  | reflect
+  | permute
+
+open symmetries
+
+def symmetries.encode : symmetries → ℕ 
+  | none              := 0
+  | rotate2           := 1
+  | rotate4           := 2
+  | rotate4reflect    := 4
+  | reflect           := 6
+  | permute           := 7
+
+def symmetries.decode : ℕ → option symmetries
+  | 0 := symmetries.none              
+  | 1 := rotate2           
+  | 2 := rotate4           
+  | 3 := option.none
+  | 4 := rotate4reflect    
+  | 5 := option.none    
+  | 6 := reflect           
+  | 7 := permute           
+  | (n + 8) := option.none
+
+instance : encodable symmetries :=
+  {
+    encode := symmetries.encode,
+    decode := symmetries.decode,
+    encodek := λ a, by {cases a; unfold symmetries.encode symmetries.decode; congr}
+  }
+
+def linear_order.preimage {α β : Type} (f : α ↪ β) [lo : linear_order β] : linear_order α :=
+{
+  le := λ x y, f x ≤ f y,
+
+  le_refl := λ x, linear_order.le_refl (f x),
+
+  le_antisymm := λ (x y : α) x_y y_x, function.embedding.injective f (linear_order.le_antisymm (f x) (f y) x_y y_x),
+
+  le_trans := λ (x y z : α), linear_order.le_trans (f x) (f y) (f z),
+
+  le_total := λ (a b : α), linear_order.le_total (f a) (f b),
+
+  decidable_le := λ a b, if h : f a ≤ f b then is_true h else is_false h
+}
+instance : linear_order symmetries := linear_order.preimage (encodable.encode' _)
+
+infix `~>`:40 := λ α β, finmap (λ _ : α, β)
 
 inductive inside_outside : Type
   | inside 
