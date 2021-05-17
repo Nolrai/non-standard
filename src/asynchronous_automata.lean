@@ -543,6 +543,9 @@ def template.print {α} (to_char : α → char) (t : template α) : string :=
 
 instance : has_to_string (template bool) := ⟨template.print (λ b, if b then '╬' else '█')⟩
 
+inductive LHZ : template bool → template bool → Type
+  | mk : ∀ lhs rhs, LHZ_base lhs rhs → LHZ (lhs.to_template) (rhs.to_template (head lhs)) 
+
 def board.write {n m : ℕ} {α} (mat : board n m α) (pos : fin n × fin m) (a : xcell α) : board n m α :=
   ⟨mat.to_array.write pos.1 ((mat.to_array.read pos.1).write pos.2 a)⟩
 
@@ -569,19 +572,25 @@ def write_template {n m : ℕ} {α : Type}
 example : ∀ n m : ℕ, n ≤ n + m := nat.le_add_right
 example : ∀ n m : ℕ, n ≤ m → ¬ m < n := λ _ _, not_lt_of_le
 
-inductive step {α} [linear_order α] (rules : template α → template α → Prop) {n m : ℕ} : 
-  board (n+1) (m+1) α → board (n+1) (m+1) α → Prop
+inductive step {α} [linear_order α] (rules : template α → template α → Type) {n m : ℕ} : 
+  board (n+1) (m+1) α → board (n+1) (m+1) α → Type
   | intro : ∀ (p : fin (n+1) × fin (m+1)) (mat : board (n+1) (m+1) α) (b),
     rules (read_template mat p) b → step mat (write_template mat p b)
 
-abbreviation is_head {n m} (mat : board (n+1) (m+1) bool) (pos : fin (n+1) × fin (m+1)) : Prop :=
-  ∃ b, LHZ (read_template mat pos) b 
+inductive path {α} [linear_order α] (rules : template α → template α → Type) {n m : ℕ} (a : board (n+1) (m+1) α) : 
+  board (n+1) (m+1) α → Prop 
+  | refl : path a
+  | snoc : ∀ {b c} (tail : path b) (head : step rules b c), path c
 
-theorem LHZ_preserves_heads (n m : ℕ) (m₁ m₂ : board (n+3) (m+3) bool) (h : step LHZ m₁ m₂) :
-  {p // is_head m₁ p} ≃ {p // is_head m₂ p} := 
-{
-  to_fun := λ ⟨p, ⟨b, p_h⟩⟩, _,
-  inv_fun := _,
-  left_inv := _,
-  right_inv := _ 
+def path.append {α} [linear_order α] (rules : template α → template α → Type) {n m : ℕ} {a b c : board (n+1) (m+1) α} :
+  path rules a b → path rules b c → path rules a c :=
+by {
+  intros a_b b_c,
+  induction b_c, 
+  case refl {exact a_b},
+  case snoc {apply path.snoc b_c_ih b_c_head},
 }
+
+abbreviation is_head {n m} (mat : board (n+1) (m+1) bool) (pos : fin (n+1) × fin (m+1)) : Type :=
+  Σ' b, LHZ (read_template mat pos) b
+
