@@ -1,5 +1,8 @@
 import data.equiv.basic
 import data.equiv.list
+import data.equiv.fin
+
+universe u
 
 inductive vonNeumann
   | N
@@ -99,42 +102,6 @@ instance : neighborhood vonNeumann :=
 def rotate_clockwise {α} [neighborhood α] : α ≃ α := neighborhood.rotate_clockwise
 def reflect_nh {α} [neighborhood α] : α ≃ α := neighborhood.reflect
 
-inductive symmetries
-  | none
-  | rotate2
-  | rotate4
-  | rotate4reflect
-  | reflect
-  | permute
-
-open symmetries
-
-def symmetries.encode : symmetries → ℕ 
-  | none              := 0
-  | rotate2           := 1
-  | rotate4           := 2
-  | rotate4reflect    := 4
-  | reflect           := 6
-  | permute           := 7
-
-def symmetries.decode : ℕ → option symmetries
-  | 0 := symmetries.none              
-  | 1 := rotate2           
-  | 2 := rotate4           
-  | 3 := option.none
-  | 4 := rotate4reflect    
-  | 5 := option.none    
-  | 6 := reflect           
-  | 7 := permute           
-  | (n + 8) := option.none
-
-instance : encodable symmetries :=
-  {
-    encode := symmetries.encode,
-    decode := symmetries.decode,
-    encodek := λ a, by {cases a; unfold symmetries.encode symmetries.decode; congr}
-  }
-
 def linear_order.preimage {α β : Type} (f : α ↪ β) [lo : linear_order β] : linear_order α :=
 {
   le := λ x y, f x ≤ f y,
@@ -149,9 +116,6 @@ def linear_order.preimage {α β : Type} (f : α ↪ β) [lo : linear_order β] 
 
   decidable_le := λ a b, if h : f a ≤ f b then is_true h else is_false h
 }
-instance : linear_order symmetries := linear_order.preimage (encodable.encode' _)
-
-infix `~>`:40 := λ α β, finmap (λ _ : α, β)
 
 inductive inside_outside : Type
   | inside 
@@ -212,10 +176,37 @@ def equiv.on_prod {α α' β β'} (f : α ≃ α') (g : β ≃ β') : (α × β)
     congr, {apply f_right}, {apply g_right}
   },
 
-} 
+}
+
+structure xcell (α : Type u) := (to_array : array 4 α)
+
+def xcell.read {α} (c : xcell α) (dir : vonNeumann) : α := c.to_array.read (vonNeumann_fin4 dir)
+def xcell.write {α} (c : xcell α) (dir : vonNeumann) (a : α) : xcell α := 
+  ⟨c.to_array.write (vonNeumann_fin4 dir) a⟩
+
+@[ext]
+lemma xcell.ext {α} (a b : xcell α) : (∀ vn, a.read vn = b.read vn) ↔ a = b :=
+by {
+  split,
+  {
+    intros hyp,
+    obtain ⟨a⟩ := a, obtain ⟨b⟩ := b,
+    congr,
+    ext,
+    transitivity ({xcell . to_array := a}.read (vonNeumann_fin4.inv_fun i)),
+      {unfold xcell.read, simp},
+      {rw hyp, unfold xcell.read, simp}
+  },
+  {
+    intros hyp,
+    simp_rw hyp,
+    intros vn,
+    refl,
+  },
+}
 
 def template.read_aux : (inside_outside × vonNeumann) ≃ fin 8 := 
-  equiv.trans (equiv.on_prod inside_outside.to_fin2 vonNeumann_fin4) fin.prod_equiv
+  equiv.trans (equiv.on_prod inside_outside.to_fin2 vonNeumann_fin4) fin_prod_fin_equiv
 
 structure template (α : Type) := (to_array : array (8) α)
 
@@ -266,36 +257,16 @@ def template.read {α} : template α ≃ (inside_outside → vonNeumann → α) 
   }
 }
 
-def ACA_rule (α) := (template α → template α → Prop)
+def rule (α) := (template α → template α → Prop)
 
-structure xcell (α : Type) := (to_array : array 4 α)
+structure board (n m : ℕ) (α : Type u) : Type u := 
+  mk :: (to_array : array n (array m (xcell α)))
 
-def xcell.read {α} (c : xcell α) (dir : vonNeumann) : α := c.to_array.read (vonNeumann_fin4 dir)
-def xcell.write {α} (c : xcell α) (dir : vonNeumann) (a : α) : xcell α := 
-  ⟨c.to_array.write (vonNeumann_fin4 dir) a⟩
+def board.read {n m} {α} (mat : board n m α) (p : fin n × fin m) := (mat.to_array.read p.1).read p.2
 
-@[ext]
-lemma xcell.ext {α} (a b : xcell α) : (∀ vn, a.read vn = b.read vn) ↔ a = b :=
-by {
-  split,
-  {
-    intros hyp,
-    obtain ⟨a⟩ := a, obtain ⟨b⟩ := b,
-    congr,
-    ext,
-    transitivity ({xcell . to_array := a}.read (vonNeumann_fin4.inv_fun i)),
-      {unfold xcell.read, simp},
-      {rw hyp, unfold xcell.read, simp}
-  },
-  {
-    intros hyp,
-    simp_rw hyp,
-    intros vn,
-    refl,
-  },
-}
-
-def ACA_board (n m) (α : Type) := aMatrix n m (xcell α) 
+@[simp]
+lemma board.read.def {n m : ℕ} {α : Type u} (mat : board n m α) (ix : fin n) (iy : fin m) :
+  mat.read ⟨ix, iy⟩ = (mat.to_array.read ix).read iy := rfl
 
 open vonNeumann
 
@@ -322,7 +293,7 @@ lemma vonNeumann.neg_involution (dir : vonNeumann) : -(-dir) = dir :=
   end
 
 def read_template.aux {n m} {α : Type} 
-  (mat : ACA_board (n+1) (m+1) α) 
+  (mat : board (n+1) (m+1) α) 
   (ix : fin (n+1) × fin (m+1)) : inside_outside → vonNeumann → α
   | inside dir := (mat.read ix).read dir
   | outside dir := 
@@ -330,7 +301,7 @@ def read_template.aux {n m} {α : Type}
     (mat.read (ix.1 + offset.1, ix.2 + offset.2)).read (-dir)
 
 def read_template {n m} {α : Type} 
-  (mat : ACA_board (n+1) (m+1) α)
+  (mat : board (n+1) (m+1) α)
   (ix : fin (n+1) × fin (m+1)) :
   template α := template.read.symm (read_template.aux mat ix)
 
@@ -363,15 +334,6 @@ instance : applicative template := {
   pure := λ α a, ⟨⟨λ _, a⟩⟩,
 }
 
-def bneq {α} [decidable_eq α] (x y : α) :=
-  if x ≠ y then tt else ff
-
-def template.hamming {α} [decidable_eq α] (a b: template α) : ℕ :=
-  (bneq <$> a <*> b).to_array.count id
-
-def aMatrix.hamming {α n m} [decidable_eq α] (a b: aMatrix n m α) : ℕ :=
-  array.count (⟨λ ix, bneq a.flattened b.flattened⟩ : array (n * m) bool) id
-
 def vonNeumann.decidable_eq.aux {α} [decidable_eq α] (f g : vonNeumann → α) : decidable (∀ x, f x = g x) :=
   if h : f N = g N ∧ f E = g E ∧ f S = g S ∧ f W = g W
     then is_true (by {rcases h with ⟨h_n, h_e, h_s, h_w⟩, intros x, cases x; assumption})
@@ -383,21 +345,6 @@ instance {α} [decidable_eq α] : decidable_eq (xcell α) :=
     rw ← xcell.ext,
     apply vonNeumann.decidable_eq.aux,
   }
-
-structure ACA_step {α : Type} [decidable_eq α] (r : ACA_rule α) {n m} (a b : ACA_board (n+1) (m+1) α) :=
-   (ix : fin (n+1) × fin (m+1))
-   (t₀ t₁ : template α)
-   (r_t₀_t₁ : r t₀ t₁)
-   (a_matches_t₀ : read_template a ix = t₀)
-   (b_matches_t₁ : read_template b ix = t₁)
-   (no_other_difference : a.hamming b = t₀.hamming t₁)
-
-inductive path {α : Type} (r : α → α → Type) : α → α → Type
-  | refl : ∀ a, path a a
-  | snoc : ∀ a b c, path a b → r b c → path a c
-
-def weak_reachabable {α : Type} [decidable_eq α] (r : ACA_rule α) {n m} (a b : ACA_board (n+1) (m+1) α) :=
-  inhabited (path (ACA_step r) a b)
 
 def array.to_template (arr : array 8 (fin 2)) : template bool := ⟨arr.map (λ n, if n = 0 then tt else ff)⟩
 def array.last {α n} (arr : array (n+1) α) := arr.read (fin.last n)
@@ -431,14 +378,23 @@ notation `#[` arr:(foldr `,` (h t, array.push_back t h) array.nil `]`) := arr.re
 def array.to_vector {n α} (arr : array n α) : vector α n := 
   ⟨arr.to_list, array.to_list_length arr⟩ 
 
-def ACA_rules.from_list : list (array 2 (array 8 (fin 2))) → template bool ~> template bool
-  | l :=
-    let to_templates : array 2 (array 8 (fin 2)) → (Σ _, template bool) :=
-      λ arr, 
-        match (arr.map array.to_template).to_vector with
-        | ⟨[old, new], _⟩ := ⟨old, new⟩
+def array.to_templates ( arr : array 2 (array 8 (fin 2))) : (template bool × template bool) :=
+  match (arr.map array.to_template).to_vector with
+  | ⟨[old, new], _⟩ := ⟨old, new⟩
+  end
+
+abbreviation ACA_rules.from_list (rule_list : list (array 2 (array 8 (fin 2)))) (lhs rhs : template bool) : Prop := 
+  (lhs, rhs) ∈ (rule_list.map array.to_templates)
+
+instance : ∀ (rules : list _), decidable_rel (ACA_rules.from_list rules)
+  | [] lhs rhs := is_false (by {apply list.not_mem_nil})
+  | (x::xs) lhs rhs :=
+    if h : (lhs, rhs) = x.to_templates
+      then is_true (or.inl h)
+      else match ACA_rules.from_list.decidable_rel xs lhs rhs with
+        | is_true ih := is_true (or.inr ih)
+        | is_false ih := is_false (λ hyp, or.dcases_on hyp h ih)
         end
-      in (l.map to_templates).to_finmap
 
 def convert_from_dixons : array 8 (fin 2) → array 8 (fin 2)
   | arr := 
@@ -447,21 +403,133 @@ def convert_from_dixons : array 8 (fin 2) → array 8 (fin 2)
       #[i_top, i_right, i_bottom, i_left, o_top, o_right, o_bottom, o_left] -- N, E, S, W order!
     end
 
-def convert_from_dixons' : array 2 (array 8 (fin 2)) → array 2 (array 8 (fin 2))
-  | arr := arr.map convert_from_dixons
+def array.from_dixons (arr : array 8 (fin 2)) : template bool := ⟨(convert_from_dixons arr).map fin_two_equiv⟩
 
-def LHZ_list := 
-  list.map (λ arr, array.map arr convert_from_dixons)
-  [
-    #[#[0,0,0,0,0,0,1,0], #[0,0,0,1,0,0,0,0]], -- move forward
-    #[#[1,0,0,0,1,1,0,0], #[1,0,0,1,1,0,0,0]], -- Turn Left (head on)
-		#[#[0,0,1,0,0,1,1,0], #[0,0,1,1,0,0,1,0]], -- Turn Left (right side collison)
-		#[#[1,0,0,1,1,1,0,1], #[1,0,1,1,1,0,0,1]], -- Turn Right
-		#[#[0,0,1,1,0,1,1,1], #[1,1,0,1,1,1,0,0]]  -- Toggle Memory
-  ]
+inductive LAR
+  | L --left
+  | A -- Across
+  | R -- Right
 
-def LHZ_base : template bool ~> template bool :=
-  ACA_rules.from_list LHZ_list
+open LAR
+
+inductive WB
+  | E -- Empty
+  | F -- Full
+open WB
+
+instance : decidable_eq WB
+  | E E := is_true rfl
+  | F F := is_true rfl
+  | E F := is_false (by {apply WB.no_confusion})
+  | F E := is_false (by {apply WB.no_confusion})
+
+inductive bcell -- a two cell 
+  | EE -- empty
+  | FF -- full
+  | HH -- half empty : 
+  -- out cell on source (head)
+  -- in cell on target (co-head) (a cohead is a head in the overlapping template)
+open bcell
+
+instance : decidable_eq bcell :=
+  by {
+    intros x y,
+    cases x; cases y; try {exact is_true rfl}; apply is_false; apply bcell.no_confusion
+  }
+
+instance : has_coe WB bcell :=
+  has_coe.mk $ λ wb,
+    match wb with
+    | E := EE
+    | F := FF
+    end
+
+def vonNeumann.move (vn : vonNeumann) : LAR → vonNeumann 
+  | L := rotate_clockwise (rotate_clockwise (rotate_clockwise vn))
+  | A := rotate_clockwise (rotate_clockwise vn)
+  | R := rotate_clockwise vn
+
+structure lhs_template :=
+  (head : vonNeumann)
+  (at_L : WB)
+  (at_A : WB)
+  (at_R : WB)
+
+structure rhs_template :=
+  (old_head : WB)
+  (at_L : bcell)
+  (at_A : bcell)
+  (at_R : bcell)
+
+open lhs_template
+open rhs_template
+
+instance : has_coe_to_fun lhs_template :=
+  {
+    F := λ _, LAR → WB,
+    coe := λ t lar,
+    match lar with
+    | L := lhs_template.at_L t
+    | A := lhs_template.at_A t 
+    | R := lhs_template.at_R t
+    end
+  }
+
+instance : has_coe_to_fun rhs_template :=
+  {
+    F := λ _, LAR → bcell,
+    coe := λ (t : rhs_template) lar,
+    match lar with
+    | L := rhs_template.at_L t
+    | A := rhs_template.at_A t 
+    | R := rhs_template.at_R t
+    end
+  }
+
+inductive LHZ_base : lhs_template → rhs_template → Prop
+| move_forward          : ∀ nv, LHZ_base ⟨nv, E, E, E⟩ ⟨E, EE, HH, EE⟩
+| turn_left_head_on     : ∀ nv, LHZ_base ⟨nv, E, F, E⟩ ⟨E, EE, FF, HH⟩
+| turn_right            : ∀ nv, LHZ_base ⟨nv, E, E, F⟩ ⟨E, HH, EE, FF⟩
+| toggle_memory         : ∀ nv, LHZ_base ⟨nv, F, F, E⟩ ⟨F, EE, HH, FF⟩
+
+def lhs_template.to_template (lhs : lhs_template) : template bool :=
+  let rotate : vonNeumann → vonNeumann :=
+    match head lhs with -- is used contravalently So is "backwards"
+    | N := λ vn, vn.move R
+    | E := λ vn, vn.move A
+    | S := λ vn, vn.move L
+    | W := id
+    end in
+  let as_fun (io : inside_outside) (vn : vonNeumann) : bool :=
+    match vn with
+    | N := ite (lhs.at_L = F) tt ff
+    | E := ite (lhs.at_A = F) tt ff
+    | S := ite (lhs.at_R = F) tt ff
+    | W := ite (io = outside) tt ff
+    end in
+  template.read.inv_fun (λ io nv, as_fun io (rotate nv))
+
+def on_bcell : bcell → inside_outside → bool
+| FF _ := tt
+| EE _ := ff
+| HH io := if io = inside then tt else ff
+
+def rhs_template.to_template (rhs : rhs_template) (lhs_head : vonNeumann) : template bool :=
+  let rotate : vonNeumann → vonNeumann :=
+    match lhs_head with -- is used contravalently So is "backwards"
+    | N := λ vn, vn.move R
+    | E := λ vn, vn.move A
+    | S := λ vn, vn.move L
+    | W := id
+    end in
+  let as_fun (io : inside_outside) (vn : vonNeumann) : bool :=
+    match vn with
+    | N := on_bcell rhs.at_L io
+    | E := on_bcell rhs.at_A io
+    | S := on_bcell rhs.at_R io 
+    | W := to_bool (rhs.old_head = F)
+    end in
+  template.read.inv_fun (λ io nv, as_fun io (rotate nv))
 
 def template.print {α} (to_char : α → char) (t : template α) : string := 
   match t.to_array.to_vector with
@@ -475,12 +543,12 @@ def template.print {α} (to_char : α → char) (t : template α) : string :=
 
 instance : has_to_string (template bool) := ⟨template.print (λ b, if b then '╬' else '█')⟩
 
-def aMatrix.write {n m : ℕ} {α} (M : aMatrix n m α) (ix : fin n × fin m) (a : α) : aMatrix n m α :=
-  ⟨M.flattened.write (aMatrix.read.aux ix.1 ix.2) a⟩
+def board.write {n m : ℕ} {α} (mat : board n m α) (pos : fin n × fin m) (a : xcell α) : board n m α :=
+  ⟨mat.to_array.write pos.1 ((mat.to_array.read pos.1).write pos.2 a)⟩
 
 def write_template.aux {n m} {α : Type} 
-  (mat : aMatrix (n+1) (m+1) (xcell α)) 
-  (ix : fin (n+1) × fin (m+1)) : inside_outside → vonNeumann → α → aMatrix (n+1) (m+1) (xcell α)
+  (mat : board (n+1) (m+1) α) 
+  (ix : fin (n+1) × fin (m+1)) : inside_outside → vonNeumann → α → board (n+1) (m+1) α
   | inside  dir a := let old := (mat.read ix) in mat.write ix (old.write dir a) 
   | outside dir a := 
     let offset : (fin (n+1) × fin (m+1)) := dir.to_index in
@@ -489,195 +557,31 @@ def write_template.aux {n m} {α : Type}
     mat.write ix (old.write (-dir) a)
 
 def write_template {n m : ℕ} {α : Type} 
-  (M : ACA_board (n+1) (m+1) α) (ix : fin (n+1) × fin (m+1)) (t : template α) :
-  ACA_board (n+1) (m+1) α :=
-  let action_list : list (ACA_board (n+1) (m+1) α → ACA_board (n+1) (m+1) α) :=
+  (M : board (n+1) (m+1) α) (ix : fin (n+1) × fin (m+1)) (t : template α) :
+  board (n+1) (m+1) α :=
+  let action_list : list (board (n+1) (m+1) α → board (n+1) (m+1) α) :=
     do
     i_o <- [inside, outside],
     dir <- [N, E, S, W],
-    pure (λ m : ACA_board (n+1) (m+1) α, write_template.aux m ix i_o dir (template.read t i_o dir)) in
+    pure (λ m : board (n+1) (m+1) α, write_template.aux m ix i_o dir (template.read t i_o dir)) in
   action_list.foldl (λ m f, f m) M
 
-open equiv
+example : ∀ n m : ℕ, n ≤ n + m := nat.le_add_right
+example : ∀ n m : ℕ, n ≤ m → ¬ m < n := λ _ _, not_lt_of_le
 
-instance : decidable_eq vonNeumann := equiv.decidable_eq vonNeumann_fin4
+inductive step {α} [linear_order α] (rules : template α → template α → Prop) {n m : ℕ} : 
+  board (n+1) (m+1) α → board (n+1) (m+1) α → Prop
+  | intro : ∀ (p : fin (n+1) × fin (m+1)) (mat : board (n+1) (m+1) α) (b),
+    rules (read_template mat p) b → step mat (write_template mat p b)
 
-def vonNeuman_to.linear_order.aux : (vonNeumann → vonNeumann) ↪ list (fin 4) :=
-  ⟨λ f, (vonNeumann_fin4 ∘ f : vonNeumann → (fin 4)) <$> [N, E, S, W],
-  by {
-    intros f g h,
-    simp at h,
-    rcases h with ⟨h_N, h_E, h_S, h_W⟩,
-    funext x, cases x; assumption
-  }⟩
+abbreviation is_head {n m} (mat : board (n+1) (m+1) bool) (pos : fin (n+1) × fin (m+1)) : Prop :=
+  ∃ b, LHZ (read_template mat pos) b 
 
-instance : linear_order (vonNeumann → vonNeumann) :=
-  linear_order.preimage vonNeuman_to.linear_order.aux
-
-def vonNeuman_perm.linear_order.aux : ¡vonNeumann ↪ (vonNeumann → vonNeumann) :=
-  { 
-    to_fun := λ π vn, π vn,
-    inj' := λ π σ h, by {simp at h, apply h}
-  }
-
-instance : linear_order ¡vonNeumann := 
-  linear_order.preimage vonNeuman_perm.linear_order.aux
-
-instance : fintype ¡vonNeumann := fintype_perm
-
-namespace symmetries
-
-abbreviation id' : ¡vonNeumann := equiv.refl _
-
-abbreviation  with_op (l : list ¡vonNeumann) (op : ¡vonNeumann) := l ++ op.trans <$> l 
-
-abbreviation symmetries.to_finset_none : list (¡vonNeumann) := pure id'
-abbreviation symmetries.to_finset_reflect := with_op (pure id') reflect_nh
-abbreviation symmetries.to_finset_rotate2 := with_op (pure id') (rotate_clockwise.trans rotate_clockwise)
-abbreviation symmetries.to_finset_rotate4 := with_op symmetries.to_finset_rotate2 rotate_clockwise
-abbreviation symmetries.to_finset_rotate8 : list (¡vonNeumann):= {}
-abbreviation symmetries.to_finset_rotate4reflect := with_op symmetries.to_finset_rotate4 reflect_nh
-
--- Yes this one is just {} also
-abbreviation symmetries.to_finset_rotate8reflect := with_op symmetries.to_finset_rotate8 reflect_nh
-
-def to_finset : symmetries → (finset ¡vonNeumann)
-| symmetries.none := symmetries.to_finset_none.to_finset
-| symmetries.rotate2 := symmetries.to_finset_rotate2.to_finset
-| symmetries.rotate4 := symmetries.to_finset_rotate4.to_finset
-| symmetries.rotate8 := symmetries.to_finset_rotate8.to_finset
-| symmetries.rotate4reflect := symmetries.to_finset_rotate4reflect.to_finset
-| symmetries.rotate8reflect := symmetries.to_finset_rotate4reflect.to_finset
-| symmetries.reflect := symmetries.to_finset_reflect.to_finset
-| symmetries.permute := finset.univ
-
-end symmetries
-
-def finset.as_list {α β : Type} (f : list α → β) (p : _) : finset α → β
-  | ⟨ms, ms_no_dup⟩ := quotient.lift f p ms
-
-def finmap.as_list {α : Type} {β : α → Type} {γ : Type} (f : list (sigma β) → γ) (p : _) : finmap β → γ
-  | ⟨ms, nodup⟩ := quotient.lift f p ms
-
-def on_equiv {α β} (π : α ≃ β) (f : β → β) (a : α) : α := π.symm (f (π a))
-
-lemma on_equiv.id {α β} (π : α ≃ β) (a : α) :
-  on_equiv π id a = a := equiv.coe_coe_symm _ _
-
-@[simp]
-lemma on_equiv.functorial {α β} (π : α ≃ β) (f g : β → β) (a : α) :
-  on_equiv π f (on_equiv π g a) = on_equiv π (f ∘ g) a := 
-by {
-  unfold on_equiv,
-  rw equiv.coe_coe_symm,
+theorem LHZ_preserves_heads (n m : ℕ) (m₁ m₂ : board (n+3) (m+3) bool) (h : step LHZ m₁ m₂) :
+  {p // is_head m₁ p} ≃ {p // is_head m₂ p} := 
+{
+  to_fun := λ ⟨p, ⟨b, p_h⟩⟩, _,
+  inv_fun := _,
+  left_inv := _,
+  right_inv := _ 
 }
-
-def template.precompose {α} (t : template α) (f : vonNeumann → vonNeumann) : template α := 
-  on_equiv template.read (λ t io nv, t io (f nv)) t
-
-def template.precompose_id {α} (t : template α) : t.precompose id = t :=
-by {
-  unfold template.precompose,
-  unfold id,
-  have : (λ (t : inside_outside → vonNeumann → α) (io : inside_outside) (nv : vonNeumann), t io nv) = id,
-  { funext, unfold id},
-  rw this,
-  apply on_equiv.id,
-}
-
-lemma template.precompose_functorial {α} (t : template α) (f g : vonNeumann → vonNeumann) :
-  t.precompose (f ∘ g) = (t.precompose f).precompose g := 
-  by {
-    unfold template.precompose,
-    rw on_equiv.functorial,
-  }
-
-def on_rule {α} (π : ¡vonNeumann) : ¡(Σ _:template α, template α) :=
-  { 
-    to_fun := λ rule, ⟨rule.1.precompose π, rule.2.precompose π⟩,
-    inv_fun := λ rule, ⟨rule.1.precompose π.symm, rule.2.precompose π.symm⟩,
-    left_inv :=
-    by {
-      intro x,
-      obtain ⟨lhs, rhs⟩ := x,
-      simp only,
-      repeat {rw ← template.precompose_functorial},
-      unfold function.comp,
-      simp_rw equiv.coe_coe_symm π,
-      have : (λ (x : vonNeumann), x) = id := by {funext, simp},
-      simp_rw this,
-      simp_rw template.precompose_id,
-      split; refl,
-    },
-    right_inv := 
-    by {
-      intro x,
-      obtain ⟨lhs, rhs⟩ := x,
-      simp only,
-      repeat {rw ← template.precompose_functorial},
-      unfold function.comp,
-      simp_rw equiv.coe_symm_coe π,
-      have : (λ (x : vonNeumann), x) = id := by {funext, simp},
-      simp_rw this,
-      simp_rw template.precompose_id,
-      split; refl,
-    }
-  }
-
-def alist.elaborate {α} [linear_order α] (πs : finset ¡vonNeumann) (base : alist (λ_ : template α, template α))  : 
-  alist (λ_ : template α, template α) :=
-    (has_seq.seq (πs.map (equiv.to_fun ∘ on_rule)) base.to_finset).to_alist
-
-def rules.elaborate {α} [linear_order α]
-  (base : template α ~> template α) (sym : symmetries) : template α ~> template α :=
-   base.lift_on (alist.elaborate sym.to_finset)
-
-def LHZ := rules.elaborate LHZ_base symmetries.rotate4
-
-inductive step {α} [linear_order α] (rules : template α ~> template α) {n m : ℕ} : 
-  ACA_board (n+1) (m+1) α → ACA_board (n+1) (m+1) α → Prop
-  | intro : ∀ (p : fin (n+1) × fin (m+1)) (mat : ACA_board (n+1) (m+1) α) {b},
-    b ∈ rules.find (read_template mat p) → step mat (write_template mat p b)
-
-instance {α} [fintype α] : fintype (xcell α) :=
-  {
-    elems := finset.map ⟨xcell.mk, by {intros a₁ a₂ h, injection h}⟩ (fintype.elems _),
-    complete := by {
-      intros x,
-      cases x,
-      rw finset.mem_map,
-      simp_rw exists_prop,
-      simp_rw function.embedding.coe_fn_mk,
-      rw exists_eq_right,
-      apply fintype.complete,
-    }
-  }
-
-instance {α} [fintype α] (n m) : fintype (ACA_board n m α) := 
-{ 
-  elems := finset.map ⟨aMatrix.mk, by {intros a₁ a₂ h, injection h}⟩ (fintype.elems _),
-  complete := by {
-    intros x,
-    cases x,
-    rw finset.mem_map,
-    simp_rw exists_prop,
-    simp_rw function.embedding.coe_fn_mk,
-    use x,
-    split,
-    apply fintype.complete,
-    refl
-  }
-}
-
-def is_head {n m} (mat : ACA_board (n+1) (m+1) bool) (pos : fin (n+1) × fin (m+1)) : Prop :=
-  read_template mat pos ∈ LHZ
-
-instance {n m} (mat : ACA_board (n+1) (m+1) bool) (pos : fin (n+1) × fin (m+1)) : decidable (is_head mat pos) :=
-  if H : LHZ.contains (read_template mat pos)
-    then is_false sorry
-    else is_true sorry
-
-theorem LHZ_preserves_heads (n m : ℕ) (m₁ m₂ : ACA_board (n+1) (m+1) bool) (h : step LHZ m₁ m₂) :
-  fintype.card {p // is_head m₁ p} = fintype.card {p // is_head m₂ p} := {
-
-  }
