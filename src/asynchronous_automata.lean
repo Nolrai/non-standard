@@ -572,15 +572,21 @@ def write_template {n m : ℕ} {α : Type}
 example : ∀ n m : ℕ, n ≤ n + m := nat.le_add_right
 example : ∀ n m : ℕ, n ≤ m → ¬ m < n := λ _ _, not_lt_of_le
 
-inductive step {α} [linear_order α] (rules : template α → template α → Type) {n m : ℕ} : 
-  board (n+1) (m+1) α → board (n+1) (m+1) α → Type
-  | intro : ∀ (p : fin (n+1) × fin (m+1)) (mat : board (n+1) (m+1) α) (b),
-    rules (read_template mat p) b → step mat (write_template mat p b)
+inductive step {α} [linear_order α]  
+  {n m : ℕ} (mat : board (n+1) (m+1) α) : 
+  (template α → template α → Type) → 
+  board (n+1) (m+1) α → Type 2 
+  | intro : 
+  ∀ (p : fin (n+1) × fin (m+1)) 
+    {rules : template α → template α → Type}
+    (b : template α)
+    (r_a_b : rules (read_template mat p) b),
+    step rules (write_template mat p b)
 
 inductive path {α} [linear_order α] (rules : template α → template α → Type) {n m : ℕ} (a : board (n+1) (m+1) α) : 
-  board (n+1) (m+1) α → Prop 
+  board (n+1) (m+1) α → Type 2
   | refl : path a
-  | snoc : ∀ {b c} (tail : path b) (head : step rules b c), path c
+  | snoc : ∀ {b c} (tail : path b) (head : step b rules c), path c
 
 def path.append {α} [linear_order α] (rules : template α → template α → Type) {n m : ℕ} {a b c : board (n+1) (m+1) α} :
   path rules a b → path rules b c → path rules a c :=
@@ -591,6 +597,20 @@ by {
   case snoc {apply path.snoc b_c_ih b_c_head},
 }
 
-abbreviation is_head {n m} (mat : board (n+1) (m+1) bool) (pos : fin (n+1) × fin (m+1)) : Type :=
+abbreviation is_head {n m} (mat : board (n+1) (m+1) bool)
+  (pos : fin (n+1) × fin (m+1)) (vn : vonNeumann):=
+  let t := (read_template mat pos).read in
+    t outside vn = tt ∧ t inside vn = ff
+
+abbreviation is_true_head {n m} (mat : board (n+1) (m+1) bool) (pos : fin (n+1) × fin (m+1)) : Type :=
   Σ' b, LHZ (read_template mat pos) b
 
+lemma preserves_heads_aux (mat₁ : board 3 3 bool) :
+  ∀ {mat₂ : board 3 3 bool},
+  (step mat₁ LHZ mat₂) →
+  (Σ' (p : fin 3 × fin 3) (vn : vonNeumann), is_head mat₂ p vn) → 
+  (Σ' p vn, is_head mat₁ p vn)
+| mat₂ (step.intro pos rhs hyp) ⟨pos₂, dir, pos₂_is_head⟩ :=
+by {
+  obtain ⟨lha, rhs, hyp⟩ := hyp,
+}
