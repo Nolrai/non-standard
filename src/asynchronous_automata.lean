@@ -1,6 +1,7 @@
 import data.equiv.basic
 import data.equiv.list
 import data.equiv.fin
+import data.finmap
 
 universe u
 
@@ -257,6 +258,13 @@ def template.read {α} : template α ≃ (inside_outside → vonNeumann → α) 
   }
 }
 
+@[ext]
+lemma template.ext {α} (x y : template α) : x.read = y.read → x = y :=
+by {
+  intro hyp,
+  exact template.read.apply_eq_iff_eq.mp hyp
+}
+
 def rule (α) := (template α → template α → Prop)
 
 structure board (n m : ℕ) (α : Type u) : Type u := 
@@ -449,6 +457,8 @@ def vonNeumann.move (vn : vonNeumann) : LAR → vonNeumann
   | A := rotate_clockwise (rotate_clockwise vn)
   | R := rotate_clockwise vn
 
+instance : decidable_eq vonNeumann := equiv.decidable_eq vonNeumann_fin4
+
 structure lhs_template :=
   (head : vonNeumann)
   (at_L : WB)
@@ -464,6 +474,18 @@ structure rhs_template :=
 open lhs_template
 open rhs_template
 
+instance : decidable_eq lhs_template 
+  | ⟨vn, l, a, r⟩ ⟨vn', l', a', r'⟩ :=
+    if h : vn = vn' ∧ l = l' ∧ a = a' ∧ r = r'
+      then is_true (by {obtain ⟨vn_h, l_h, a_h, r_h⟩ := h, congr; assumption})
+      else is_false (by {intros target, injection target, apply h, repeat {split}; assumption})
+
+instance : decidable_eq rhs_template 
+  | ⟨wb, l, a, r⟩ ⟨wb', l', a', r'⟩ :=
+    if h : wb = wb' ∧ l = l' ∧ a = a' ∧ r = r'
+      then is_true (by {obtain ⟨vn_h, l_h, a_h, r_h⟩ := h, congr; assumption})
+      else is_false (by {intros target, injection target, apply h, repeat {split}; assumption})
+
 instance : has_coe_to_fun lhs_template :=
   {
     F := λ _, LAR → WB,
@@ -474,6 +496,13 @@ instance : has_coe_to_fun lhs_template :=
     | R := lhs_template.at_R t
     end
   }
+
+@[simp]
+lemma lhs_at_L (lhs : lhs_template) : lhs L = at_L lhs := rfl 
+@[simp]
+lemma lhs_at_A (lhs : lhs_template) : lhs A = at_A lhs := rfl 
+@[simp]
+lemma lhs_at_R (lhs : lhs_template) : lhs R = at_R lhs := rfl 
 
 instance : has_coe_to_fun rhs_template :=
   {
@@ -486,28 +515,109 @@ instance : has_coe_to_fun rhs_template :=
     end
   }
 
-inductive LHZ_base : lhs_template → rhs_template → Prop
+@[simp]
+lemma rhs_at_L (rhs : rhs_template) : rhs L = at_L rhs := rfl 
+@[simp]
+lemma rhs_at_A (rhs : rhs_template) : rhs A = at_A rhs := rfl 
+@[simp]
+lemma rhs_at_R (rhs : rhs_template) : rhs R = at_R rhs := rfl
+
+inductive LHZ_base : lhs_template -> rhs_template -> Type
 | move_forward          : ∀ nv, LHZ_base ⟨nv, E, E, E⟩ ⟨E, EE, HH, EE⟩
 | turn_left_head_on     : ∀ nv, LHZ_base ⟨nv, E, F, E⟩ ⟨E, EE, FF, HH⟩
 | turn_right            : ∀ nv, LHZ_base ⟨nv, E, E, F⟩ ⟨E, HH, EE, FF⟩
 | toggle_memory         : ∀ nv, LHZ_base ⟨nv, F, F, E⟩ ⟨F, EE, HH, FF⟩
 
-def lhs_template.to_template (lhs : lhs_template) : template bool :=
-  let rotate : vonNeumann → vonNeumann :=
-    match head lhs with -- is used contravalently So is "backwards"
-    | N := λ vn, vn.move R
-    | E := λ vn, vn.move A
-    | S := λ vn, vn.move L
-    | W := id
-    end in
-  let as_fun (io : inside_outside) (vn : vonNeumann) : bool :=
-    match vn with
-    | N := ite (lhs.at_L = F) tt ff
-    | E := ite (lhs.at_A = F) tt ff
-    | S := ite (lhs.at_R = F) tt ff
-    | W := ite (io = outside) tt ff
-    end in
-  template.read.inv_fun (λ io nv, as_fun io (rotate nv))
+namespace lhs_template
+section lhs_to_template
+
+variable (lhs : lhs_template)
+
+def aux₁ : vonNeumann → vonNeumann :=
+  match head lhs with 
+  | N := λ vn, vn.move L
+  | E := λ vn, vn.move A
+  | S := λ vn, vn.move R
+  | W := id
+  end
+
+def aux₂ (io : inside_outside) (vn : vonNeumann) :=
+  match vn with
+  | N := ite (lhs.at_L = F) tt ff
+  | E := ite (lhs.at_A = F) tt ff
+  | S := ite (lhs.at_R = F) tt ff
+  | W := ite (io = outside) tt ff
+  end
+
+def to_template (lhs : lhs_template) : template bool :=
+  template.read.inv_fun (λ io vn, aux₂ lhs io (aux₁ lhs vn))
+
+def is_head (f : inside_outside → bool) : Prop := 
+  f inside = ff ∧ f outside = tt 
+
+lemma head_at_head.aux (vn : vonNeumann) : is_head (λ io, aux₂ lhs io vn) ↔ vn = W :=
+by {
+  unfold is_head,
+  cases vn,
+  case W {
+    apply iff_of_true _ rfl,
+    funext,
+    unfold aux₂,
+    split,
+    apply if_neg, {intros h, cases h},
+    apply if_pos, {refl}
+  },
+  all_goals {
+    apply iff_of_false _,
+    {
+      intro h,
+      cases h,
+    },
+    intros crazy,
+    obtain ⟨inside_crazy, outside_crazy⟩ := crazy,
+    have : ff = tt,
+    unfold aux₂ at *,
+    transitivity ite (_ = F) tt ff,
+    symmetry,
+    exact inside_crazy,
+    exact outside_crazy,
+    cases this,
+  },
+}
+
+def is_head_at (t : template bool) (vn : vonNeumann) : Prop := 
+  is_head (λ io, template.read t io vn)
+
+lemma head_at_head (lhs : lhs_template) : 
+  is_head_at (lhs.to_template) lhs.head :=
+by {
+  cases lhs; cases lhs_head; cases lhs_at_L; cases lhs_at_A; cases lhs_at_R,
+  all_goals {
+      unfold lhs_template.to_template is_head_at,
+      simp,
+      rw head_at_head.aux,
+      unfold aux₁,
+      try {
+        unfold vonNeumann.move,
+        unfold_coes,
+        unfold rotate_clockwise,
+        unfold_projs,
+        unfold vonNeumann.rotate_clockwise'},
+  },
+  all_goals {
+    rw id,
+  }
+}
+
+lemma not_head_at_not_head (lhs : lhs_template) (vn : vonNeumann) : 
+  vn ≠ lhs.head → ¬ is_head_at (lhs.to_template) vn :=
+by {
+
+}
+
+
+end lhs_to_template
+end lhs_template
 
 def on_bcell : bcell → inside_outside → bool
 | FF _ := tt
@@ -543,9 +653,166 @@ def template.print {α} (to_char : α → char) (t : template α) : string :=
 
 instance : has_to_string (template bool) := ⟨template.print (λ b, if b then '╬' else '█')⟩
 
-inductive LHZ : template bool → template bool → Type
-  | mk : ∀ lhs rhs, LHZ_base lhs rhs → LHZ (lhs.to_template) (rhs.to_template (head lhs)) 
+lemma LHZ_base.unique (l r) (a b : LHZ_base l r) : a = b :=
+  by {cases a; cases b; refl}
 
+def LHZ_any := Σ' l r, ∃ x : LHZ_base l r, true
+
+instance : decidable_eq LHZ_any 
+  | ⟨a_l, a_r, a_h⟩ ⟨b_l, b_r, b_h⟩ :=
+  if h : a_l = b_l
+  then is_true 
+    (by {
+      cases a_h; cases b_h; rename a_h_w a_h; rename b_h_w b_h, cases b_h_h; cases a_h_h; cases a_h; cases b_h; congr; funext; injection h; cases h_3; cases h_2; cases h_4; rw h_1,
+    })
+  else is_false
+    (by {
+      intros target,
+      injection target,
+      exact h h_1,
+    })
+
+def vn_to_LHZ (vn : vonNeumann) : list LHZ_any :=
+  [ ⟨_, _, LHZ_base.move_forward vn, true.intro⟩
+  , ⟨_, _, LHZ_base.turn_left_head_on vn, true.intro⟩
+  , ⟨_, _, LHZ_base.turn_right vn, true.intro⟩
+  , ⟨_, _, LHZ_base.toggle_memory vn, true.intro⟩
+  ]
+
+lemma vn_to_LHZ.complete  (l r) (x : LHZ_base l r) : 
+  (⟨l,r,x,true.intro⟩ : LHZ_any) ∈ vn_to_LHZ (l.head):= 
+by {
+  unfold vn_to_LHZ,
+  cases x; cases x_1; simp,
+}
+
+def LHZ.elems := ([N, E, S, W].bind vn_to_LHZ)
+
+lemma LHZ.elems.complete : ∀ (x : LHZ_any), x ∈ LHZ.elems
+  | ⟨l, r, x, true.intro⟩ := by {
+    unfold LHZ.elems; unfold list.bind; unfold list.map,
+    rw list.mem_join,
+    cases x with vn vn vn vn,
+    all_goals 
+      {
+        cases vn, 
+        case N {use vn_to_LHZ N, simp, apply vn_to_LHZ.complete},
+        case E {use vn_to_LHZ E, simp, apply vn_to_LHZ.complete},
+        case S {use vn_to_LHZ S, simp, apply vn_to_LHZ.complete},
+        case W {use vn_to_LHZ W, simp, apply vn_to_LHZ.complete},
+    }
+  }
+
+instance : fintype LHZ_any := 
+{ 
+  elems := LHZ.elems.to_finset,
+    
+  complete := LHZ.elems.complete
+}
+
+inductive LHZ : template bool → template bool → Prop
+  | mk : ∀ lhs rhs, LHZ_base lhs rhs → LHZ (lhs.to_template) (rhs.to_template (head lhs))
+
+infixr ` ~> ` :40 := λ α β, finmap (λ _ : α, β)
+
+def LHZ_any.to_pair : LHZ_any → (Σ _:lhs_template, rhs_template)
+  | ⟨l, r, _⟩ := ⟨l, r⟩
+
+def LHZ_base.finmap : lhs_template ~> rhs_template := 
+  (LHZ.elems.map LHZ_any.to_pair).to_finmap
+
+lemma list.map_nodup {α β : Type u} 
+  (f : α → β) (f_inj : function.injective f) 
+  (l : list α) :
+  l.nodup ↔ (l.map f).nodup :=
+by {
+  unfold list.nodup,
+  induction l,
+  {rw list.map_nil, exact iff_of_true list.pairwise.nil list.pairwise.nil},
+  {
+    rw list.map_cons,
+    simp_rw list.pairwise_cons,
+    have : ∀ (a b c d : Prop), (b ↔ d) → (a ↔ c) → (a ∧ b ↔ c ∧ d), 
+    { 
+      clear_except,
+      intros a b c d b_d a_c,
+      split; intros h; obtain ⟨x, y⟩ := h,
+      {rw [← b_d, ← a_c], split; assumption},
+      {rw [b_d, a_c], split; assumption}
+    },
+    apply this; clear this,
+    {exact l_ih},
+    split; intros h a a_in crazy; rw ← crazy at a_in; clear crazy,
+    {apply h l_hd, rw ← list.mem_map_of_injective f_inj, exact a_in, refl},
+    {apply h (f l_hd), rw list.mem_map_of_injective f_inj, exact a_in, refl}
+  }
+}
+
+section finmap_bimap
+
+variables {α α' : Type u} {β : α → Type u} {β' : α' → Type u}
+variables (m : finmap β)
+variables (f : (Σ x, β x) → (Σ x, β' x)) 
+
+def list.nodupkeys_map 
+  (l : list (Σ x, β x)) (l_nodupkeys : l.nodupkeys) : 
+  (∀ (a₁ a₂ : Σ x, β x), (f a₁).1 = (f a₂).1 → a₁.1 = a₂.1) → (l.map f).nodupkeys :=
+by {
+  intros f_hyp,
+  induction l,
+  apply list.nodupkeys_nil,
+  rw list.map_cons,
+  apply list.nodupkeys_cons.mpr,
+  rw list.nodupkeys_cons at l_nodupkeys,
+  obtain ⟨nodupkeys_hd, nodupkeys_tl⟩ := l_nodupkeys,
+  split,
+  {
+    intro crazy,
+    unfold list.keys at crazy,
+    simp_rw list.mem_map at crazy,
+    obtain ⟨x, ⟨y, y_in_l_tl, f_y_eq_x⟩, crazy⟩ := crazy,
+    rw ← f_y_eq_x at *, clear' x f_y_eq_x,
+    have : y.fst = l_hd.fst := f_hyp y l_hd crazy,
+    rw ← this at nodupkeys_hd,
+    rw list.mem_keys at nodupkeys_hd,
+    apply nodupkeys_hd,
+    use y.snd,
+    simp,
+    apply y_in_l_tl,
+  },
+  {exact l_ih nodupkeys_tl},
+}
+
+def finmap.bimap (f_hyp : _) 
+  : finmap β' := 
+  { finmap . 
+    entries := m.entries.map f, 
+    nodupkeys := by {
+      cases m,
+      simp,
+      induction m_entries,
+      simp at *,
+      apply @list.nodupkeys_map; try {assumption},
+      refl,
+    }
+  }
+
+end finmap_bimap
+
+def LHZ.finmap.aux : (Σ (x : lhs_template), rhs_template) → (Σ (x : template bool), template bool)
+  | ⟨lhs, rhs⟩ := ⟨lhs.to_template, rhs.to_template lhs.head⟩
+
+def LHZ.finmap : template bool ~> template bool := 
+  (LHZ_base.finmap).bimap LHZ.finmap.aux (by {
+    intros a₁ a₂ h,
+    obtain ⟨l₁, r₁⟩ := a₁,
+    obtain ⟨l₂, r₂⟩ := a₂,
+    unfold LHZ.finmap.aux at h,
+    simp at *,
+    clear_except,
+
+  })
+  
 def board.write {n m : ℕ} {α} (mat : board n m α) (pos : fin n × fin m) (a : xcell α) : board n m α :=
   ⟨mat.to_array.write pos.1 ((mat.to_array.read pos.1).write pos.2 a)⟩
 
@@ -605,12 +872,33 @@ abbreviation is_head {n m} (mat : board (n+1) (m+1) bool)
 abbreviation is_true_head {n m} (mat : board (n+1) (m+1) bool) (pos : fin (n+1) × fin (m+1)) : Type :=
   Σ' b, LHZ (read_template mat pos) b
 
-lemma preserves_heads_aux (mat₁ : board 3 3 bool) :
-  ∀ {mat₂ : board 3 3 bool},
-  (step mat₁ LHZ mat₂) →
-  (Σ' (p : fin 3 × fin 3) (vn : vonNeumann), is_head mat₂ p vn) → 
-  (Σ' p vn, is_head mat₁ p vn)
-| mat₂ (step.intro pos rhs hyp) ⟨pos₂, dir, pos₂_is_head⟩ :=
-by {
-  obtain ⟨lha, rhs, hyp⟩ := hyp,
-}
+lemma LHZ_base.targets_have_one_cohead : ∀ lhs rhs, LHZ_base lhs rhs -> ∃! dir : LAR, rhs dir = HH :=
+  by {
+    intros lhs rhs h,
+    cases h,
+    { 
+      use A, 
+      split,
+      {simp},
+      intro y; cases y; simp,
+    },
+    {
+      use R,
+      split,
+      {simp},
+      intro y; cases y; simp,
+    },
+    {
+      use L,
+      split,
+      {simp},
+      intro y; cases y; simp,
+    },
+    {
+      use A,
+      split,
+      {simp},
+      intro y; cases y; simp,
+    },
+  }
+  
