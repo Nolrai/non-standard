@@ -2,6 +2,7 @@ import data.equiv.basic
 import data.equiv.list
 import data.equiv.fin
 import data.finmap
+import order.lexicographic
 
 universe u
 
@@ -452,18 +453,21 @@ instance : has_coe WB bcell :=
     | F := FF
     end
 
-def vonNeumann.move (vn : vonNeumann) : LAR → vonNeumann 
-  | L := rotate_clockwise (rotate_clockwise (rotate_clockwise vn))
-  | A := rotate_clockwise (rotate_clockwise vn)
-  | R := rotate_clockwise vn
+def vonNeumann.move : LAR → vonNeumann ≃ vonNeumann 
+  | L := rotate_clockwise.trans (rotate_clockwise.trans rotate_clockwise)
+  | A := rotate_clockwise.trans rotate_clockwise
+  | R := rotate_clockwise
 
 instance : decidable_eq vonNeumann := equiv.decidable_eq vonNeumann_fin4
 
-structure lhs_template :=
-  (head : vonNeumann)
+structure lhs_template_body :=
   (at_L : WB)
   (at_A : WB)
   (at_R : WB)
+
+structure lhs_template :=
+  (head : vonNeumann)
+  (body : lhs_template_body)
 
 structure rhs_template :=
   (old_head : WB)
@@ -478,7 +482,7 @@ instance : decidable_eq lhs_template
   | ⟨vn, l, a, r⟩ ⟨vn', l', a', r'⟩ :=
     if h : vn = vn' ∧ l = l' ∧ a = a' ∧ r = r'
       then is_true (by {obtain ⟨vn_h, l_h, a_h, r_h⟩ := h, congr; assumption})
-      else is_false (by {intros target, injection target, apply h, repeat {split}; assumption})
+      else is_false (by {intros target, injection target, injection h_2, apply h, repeat {split}; assumption})
 
 instance : decidable_eq rhs_template 
   | ⟨wb, l, a, r⟩ ⟨wb', l', a', r'⟩ :=
@@ -491,18 +495,18 @@ instance : has_coe_to_fun lhs_template :=
     F := λ _, LAR → WB,
     coe := λ t lar,
     match lar with
-    | L := lhs_template.at_L t
-    | A := lhs_template.at_A t 
-    | R := lhs_template.at_R t
+    | L := lhs_template_body.at_L (lhs_template.body t)
+    | A := lhs_template_body.at_A (lhs_template.body t)
+    | R := lhs_template_body.at_R (lhs_template.body t)
     end
   }
 
 @[simp]
-lemma lhs_at_L (lhs : lhs_template) : lhs L = at_L lhs := rfl 
+lemma lhs_at_L (lhs : lhs_template) : lhs L = lhs.body.at_L := rfl 
 @[simp]
-lemma lhs_at_A (lhs : lhs_template) : lhs A = at_A lhs := rfl 
+lemma lhs_at_A (lhs : lhs_template) : lhs A = lhs.body.at_A := rfl 
 @[simp]
-lemma lhs_at_R (lhs : lhs_template) : lhs R = at_R lhs := rfl 
+lemma lhs_at_R (lhs : lhs_template) : lhs R = lhs.body.at_R := rfl 
 
 instance : has_coe_to_fun rhs_template :=
   {
@@ -528,34 +532,77 @@ inductive LHZ_base : lhs_template -> rhs_template -> Type
 | turn_right            : ∀ nv, LHZ_base ⟨nv, E, E, F⟩ ⟨E, HH, EE, FF⟩
 | toggle_memory         : ∀ nv, LHZ_base ⟨nv, F, F, E⟩ ⟨F, EE, HH, FF⟩
 
-namespace lhs_template
-section lhs_to_template
-
-variable (lhs : lhs_template)
-
-def aux₁ : vonNeumann → vonNeumann :=
-  match head lhs with 
-  | N := λ vn, vn.move L
-  | E := λ vn, vn.move A
-  | S := λ vn, vn.move R
-  | W := id
+def rotate_with_head (lhs_head : vonNeumann) : vonNeumann ≃ vonNeumann :=
+  match lhs_head with 
+  | N := vonNeumann.move L
+  | E := vonNeumann.move A
+  | S := vonNeumann.move R
+  | W := equiv.refl vonNeumann
   end
 
-def aux₂ (io : inside_outside) (vn : vonNeumann) :=
+namespace lhs_template
+
+def aux₂ (lhsb : lhs_template_body) (io : inside_outside) (vn : vonNeumann) : bool:= 
   match vn with
-  | N := ite (lhs.at_L = F) tt ff
-  | E := ite (lhs.at_A = F) tt ff
-  | S := ite (lhs.at_R = F) tt ff
+  | N := ite (lhsb.at_L = F) tt ff
+  | E := ite (lhsb.at_A = F) tt ff
+  | S := ite (lhsb.at_R = F) tt ff
   | W := ite (io = outside) tt ff
   end
 
+end lhs_template
+
+instance : linear_order inside_outside := 
+  linear_order.lift inside_outside.to_fin2 inside_outside.to_fin2.injective
+
+instance : fintype inside_outside := 
+  fintype.of_equiv (fin 2) inside_outside.to_fin2.symm
+
+def inside_outside.repr : inside_outside → string
+  | inside := "inside" 
+  | outside := "inside"
+
+def vonNeumann.repr : vonNeumann → string
+| N := "N"
+| E := "E"
+| S := "S"
+| W := "W"
+
+instance : has_repr inside_outside := ⟨inside_outside.repr⟩
+instance : has_repr vonNeumann := ⟨vonNeumann.repr⟩
+
+namespace lhs_template
+
+def in_order := [(inside, N), (inside, E), (inside, S), (inside, W), (inside, N), (inside, E), (inside, S), (inside, W)]
+
+open function
+
+lemma aux₂_injective : function.injective aux₂ :=
+by {
+  intros x y h,
+  have : in_order.map (uncurry (aux₂ x)) = in_order.map (uncurry (aux₂ y)) := by {rw h},
+  clear h, rename this h,
+  cases x; cases x_at_L; cases x_at_A; cases x_at_R;
+    cases y; cases y_at_L; cases y_at_A; cases y_at_R,
+  all_goals {
+    try {refl},
+  },
+  all_goals {
+    unfold in_order at h,
+    simp_rw [list.map_cons, list.map_nil, function.uncurry_def] at h,
+    unfold aux₂ at h,
+    simp at h,
+    cases h,
+  }
+}
+
 def to_template (lhs : lhs_template) : template bool :=
-  template.read.inv_fun (λ io vn, aux₂ lhs io (aux₁ lhs vn))
+  template.read.inv_fun (λ io vn, aux₂ lhs.body io (rotate_with_head (lhs.head) vn))
 
 def is_head (f : inside_outside → bool) : Prop := 
   f inside = ff ∧ f outside = tt 
 
-lemma head_at_head.aux (vn : vonNeumann) : is_head (λ io, aux₂ lhs io vn) ↔ vn = W :=
+lemma head_at_head.aux (lhsb : lhs_template_body) (vn : vonNeumann) : is_head (λ io, aux₂ lhsb io vn) ↔ vn = W :=
 by {
   unfold is_head,
   cases vn,
@@ -591,32 +638,261 @@ def is_head_at (t : template bool) (vn : vonNeumann) : Prop :=
 lemma head_at_head (lhs : lhs_template) : 
   is_head_at (lhs.to_template) lhs.head :=
 by {
-  cases lhs; cases lhs_head; cases lhs_at_L; cases lhs_at_A; cases lhs_at_R,
+  cases lhs; cases lhs_head,
   all_goals {
       unfold lhs_template.to_template is_head_at,
       simp,
       rw head_at_head.aux,
-      unfold aux₁,
+      unfold rotate_with_head,
+      try {unfold vonNeumann.move,
+        try {simp_rw equiv.coe_trans},
+        unfold rotate_clockwise,
+        unfold_projs,
+        rw ← equiv.to_fun_as_coe,
+        simp only [function.comp_app],
+        unfold rotate_clockwise'
+      },
+  },
+  {
+    rw equiv.coe_refl,
+    rw id,
+  }
+}
+
+lemma not_head_at_not_head (lhs : lhs_template) (vn : vonNeumann)  (vn_neq_lhs_head : vn ≠ lhs.head) : 
+  ¬ is_head_at (lhs.to_template) vn :=
+  match lhs, vn, vn_neq_lhs_head with
+  | {head := N, body := _}, N, p := 
+    λ _ , false.rec false (p (eq.refl N))
+  | {head := E, body := _}, E, p := 
+    λ _ , false.rec false (p (eq.refl E))
+  | {head := S, body := _}, S, p := 
+    λ _ , false.rec false (p (eq.refl S))
+  | {head := W, body := _}, W, p := 
+    λ _ , false.rec false (p (eq.refl W))
+  
+  -- head := N
+  | {head := N, body := _}, E, p := 
+    by {
+      unfold is_head_at lhs_template.to_template,
+      simp,
+      unfold rotate_with_head,
       try {
         unfold vonNeumann.move,
         unfold_coes,
         unfold rotate_clockwise,
         unfold_projs,
-        unfold vonNeumann.rotate_clockwise'},
-  },
-  all_goals {
-    rw id,
-  }
-}
+        unfold vonNeumann.rotate_clockwise'
+      },
+      rw head_at_head.aux,
+      apply vonNeumann.no_confusion,
+    }
+  | {head := N, body := _}, S, p := 
+    by {
+      unfold is_head_at lhs_template.to_template,
+      simp,
+      unfold rotate_with_head,
+      try {
+        unfold vonNeumann.move,
+        unfold_coes,
+        unfold rotate_clockwise,
+        unfold_projs,
+        unfold vonNeumann.rotate_clockwise'
+      },
+      rw head_at_head.aux,
+      apply vonNeumann.no_confusion,
+    }
+  | {head := N, body := _}, W, p := 
+    by {
+      unfold is_head_at lhs_template.to_template,
+      simp,
+      unfold rotate_with_head,
+      try {
+        unfold vonNeumann.move,
+        unfold_coes,
+        unfold rotate_clockwise,
+        unfold_projs,
+        unfold vonNeumann.rotate_clockwise'
+      },
+      rw head_at_head.aux,
+      apply vonNeumann.no_confusion,
+    }
+  
+  -- head := E
+  | {head := E, body := _}, N, p := 
+    by {
+      unfold is_head_at lhs_template.to_template,
+      simp,
+      unfold rotate_with_head,
+      try {
+        unfold vonNeumann.move,
+        unfold_coes,
+        unfold rotate_clockwise,
+        unfold_projs,
+        unfold vonNeumann.rotate_clockwise'
+      },
+      rw head_at_head.aux,
+      apply vonNeumann.no_confusion,
+    }
+  | {head := E, body := _}, S, p := 
+    by {
+      unfold is_head_at lhs_template.to_template,
+      simp,
+      unfold rotate_with_head,
+      try {
+        unfold vonNeumann.move,
+        unfold_coes,
+        unfold rotate_clockwise,
+        unfold_projs,
+        unfold vonNeumann.rotate_clockwise'
+      },
+      rw head_at_head.aux,
+      apply vonNeumann.no_confusion,
+    }
+  | {head := E, body := _}, W, p := 
+    by {
+      unfold is_head_at lhs_template.to_template,
+      simp,
+      unfold rotate_with_head,
+      try {
+        unfold vonNeumann.move,
+        unfold_coes,
+        unfold rotate_clockwise,
+        unfold_projs,
+        unfold vonNeumann.rotate_clockwise'
+      },
+      rw head_at_head.aux,
+      apply vonNeumann.no_confusion,
+    }
 
-lemma not_head_at_not_head (lhs : lhs_template) (vn : vonNeumann) : 
-  vn ≠ lhs.head → ¬ is_head_at (lhs.to_template) vn :=
+    -- head := S
+  | {head := S, body := _}, N, p := 
+    by {
+      unfold is_head_at lhs_template.to_template,
+      simp,
+      unfold rotate_with_head,
+      try {
+        unfold vonNeumann.move,
+        unfold_coes,
+        unfold rotate_clockwise,
+        unfold_projs,
+        unfold vonNeumann.rotate_clockwise'
+      },
+      rw head_at_head.aux,
+      apply vonNeumann.no_confusion,
+    }
+  | {head := S, body := _}, E, p := 
+    by {
+      unfold is_head_at lhs_template.to_template,
+      simp,
+      unfold rotate_with_head,
+      try {
+        unfold vonNeumann.move,
+        unfold_coes,
+        unfold rotate_clockwise,
+        unfold_projs,
+        unfold vonNeumann.rotate_clockwise'
+      },
+      rw head_at_head.aux,
+      apply vonNeumann.no_confusion,
+    }
+  | {head := S, body := _}, W, p := 
+    by {
+      unfold is_head_at lhs_template.to_template,
+      simp,
+      unfold rotate_with_head,
+      try {
+        unfold vonNeumann.move,
+        unfold_coes,
+        unfold rotate_clockwise,
+        unfold_projs,
+        unfold vonNeumann.rotate_clockwise'
+      },
+      rw head_at_head.aux,
+      apply vonNeumann.no_confusion,
+    }
+
+  -- head := W
+  | {head := W, body := _}, N, p := 
+    by {
+      unfold is_head_at lhs_template.to_template,
+      simp,
+      unfold rotate_with_head,
+      try {
+        unfold vonNeumann.move,
+        unfold_coes,
+        unfold rotate_clockwise,
+        unfold_projs,
+        unfold vonNeumann.rotate_clockwise'
+      },
+      rw head_at_head.aux,
+      apply vonNeumann.no_confusion,
+    }
+  | {head := W, body := _}, E, p := 
+    by {
+      unfold is_head_at lhs_template.to_template,
+      simp,
+      unfold rotate_with_head,
+      try {
+        unfold vonNeumann.move,
+        unfold_coes,
+        unfold rotate_clockwise,
+        unfold_projs,
+        unfold vonNeumann.rotate_clockwise'
+      },
+      rw head_at_head.aux,
+      apply vonNeumann.no_confusion,
+    }
+  | {head := W, body := _}, S, p := 
+    by {
+      unfold is_head_at lhs_template.to_template,
+      simp,
+      unfold rotate_with_head,
+      try {
+        unfold vonNeumann.move,
+        unfold_coes,
+        unfold rotate_clockwise,
+        unfold_projs,
+        unfold vonNeumann.rotate_clockwise'
+      },
+      rw head_at_head.aux,
+      apply vonNeumann.no_confusion,
+    }
+  end
+
+lemma iff_head_at_head (lhs : lhs_template) (vn : vonNeumann) :
+  (vn = lhs.head) ↔ is_head_at lhs.to_template vn :=
 by {
-
+  split; intros h,
+  {rw h, exact head_at_head lhs},
+  {contrapose h, exact not_head_at_not_head lhs vn h}
 }
 
+lemma to_template_injective : function.injective lhs_template.to_template :=
+  by {
+    intros x y h,
+    have x_head_eq_y_head : x.head = y.head,
+    rw iff_head_at_head,
+    rw ← h,
+    exact head_at_head x,
+    cases x; cases y; simp at *,
+    rw x_head_eq_y_head at *, clear x_head_eq_y_head x_head,
+    split, {refl},
+    unfold lhs_template.to_template at h, simp at h,
+    set f := rotate_with_head y_head,
+    have : aux₂ x_body = aux₂ y_body,
+    funext,
+    have : ∃ vn', vn = f vn' := ⟨f.inv_fun vn, _⟩,
+    obtain ⟨vn', vn_eq ⟩ := this,
+    rw vn_eq,
+    transitivity (λ (io : inside_outside) (vn : vonNeumann), aux₂ x_body io (f vn)) io vn',
+    {simp},
+    {rw h},
+    rw ← equiv.to_fun_as_coe,
+    rw f.right_inv,
+    apply aux₂_injective this,
+  }
 
-end lhs_to_template
 end lhs_template
 
 def on_bcell : bcell → inside_outside → bool
@@ -625,13 +901,6 @@ def on_bcell : bcell → inside_outside → bool
 | HH io := if io = inside then tt else ff
 
 def rhs_template.to_template (rhs : rhs_template) (lhs_head : vonNeumann) : template bool :=
-  let rotate : vonNeumann → vonNeumann :=
-    match lhs_head with -- is used contravalently So is "backwards"
-    | N := λ vn, vn.move R
-    | E := λ vn, vn.move A
-    | S := λ vn, vn.move L
-    | W := id
-    end in
   let as_fun (io : inside_outside) (vn : vonNeumann) : bool :=
     match vn with
     | N := on_bcell rhs.at_L io
@@ -639,7 +908,7 @@ def rhs_template.to_template (rhs : rhs_template) (lhs_head : vonNeumann) : temp
     | S := on_bcell rhs.at_R io 
     | W := to_bool (rhs.old_head = F)
     end in
-  template.read.inv_fun (λ io nv, as_fun io (rotate nv))
+  template.read.inv_fun (λ io nv, as_fun io (rotate_with_head lhs_head nv))
 
 def template.print {α} (to_char : α → char) (t : template α) : string := 
   match t.to_array.to_vector with
@@ -663,7 +932,9 @@ instance : decidable_eq LHZ_any
   if h : a_l = b_l
   then is_true 
     (by {
-      cases a_h; cases b_h; rename a_h_w a_h; rename b_h_w b_h, cases b_h_h; cases a_h_h; cases a_h; cases b_h; congr; funext; injection h; cases h_3; cases h_2; cases h_4; rw h_1,
+      obtain ⟨a_h, _x⟩ := a_h, cases _x,
+      obtain ⟨b_h, _x⟩ := b_h, cases _x,
+      cases a_h; cases b_h; cases h; refl,
     })
   else is_false
     (by {
@@ -809,7 +1080,7 @@ def LHZ.finmap : template bool ~> template bool :=
     obtain ⟨l₂, r₂⟩ := a₂,
     unfold LHZ.finmap.aux at h,
     simp at *,
-    clear_except,
+    clear_except h,
 
   })
   
